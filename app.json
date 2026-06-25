@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Travel Buddy",
+    "slug": "travel-buddy",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "plugins": ["expo-font", "expo-web-browser"]
+  }
+}
