@@ -1,8 +1,8 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
-import { View, StyleSheet } from 'react-native';
-import { Hop as Home, ClipboardList, Wallet, Map, BookOpen } from 'lucide-react-native';
+import { View, StyleSheet, Image, TouchableOpacity, Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import HomeScreen from '../screens/HomeScreen';
 import ItineraryScreen from '../screens/ItineraryScreen';
@@ -33,20 +33,41 @@ import MyTripsScreen from '../screens/MyTripsScreen';
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-const TAB_ICONS: Record<string, React.ComponentType<{ size: number; color: string }>> = {
-  Home,
-  Itinerary: ClipboardList,
-  Budget: Wallet,
-  Explore: Map,
-  Journal: BookOpen,
+const TAB_ICONS: Record<string, any> = {
+  Home: require('../../assets/icons/home.png'),
+  Itinerary: require('../../assets/icons/itinerary.png'),
+  Budget: require('../../assets/icons/budget.png'),
+  Explore: require('../../assets/icons/explore.png'),
+  Journal: require('../../assets/icons/journal.png'),
 };
 
-function TabBarIcon({ name, focused }: { name: string; focused: boolean }) {
-  const Icon = TAB_ICONS[name];
-  const color = focused ? '#4CAF50' : '#999';
+const TAB_LABELS = ['Home', 'Itinerary', 'Budget', 'Explore', 'Journal'];
+
+function CustomTabBar({ state, navigation }: any) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.tabIconContainer, focused && styles.tabIconFocused]}>
-      {Icon && <Icon size={22} color={color} />}
+    <View style={[styles.tabBar, { paddingBottom: insets.bottom || 8 }]}>
+      {state.routes.map((route: any, index: number) => {
+        const focused = state.index === index;
+        const icon = TAB_ICONS[route.name];
+        return (
+          <TouchableOpacity
+            key={route.key}
+            style={styles.tabItem}
+            onPress={() => navigation.navigate(route.name)}
+            activeOpacity={0.7}
+          >
+            <Image
+              source={icon}
+              style={[styles.tabIcon, { opacity: focused ? 1 : 0.4 }]}
+              resizeMode="contain"
+            />
+            <Text style={[styles.tabLabel, { color: focused ? '#4CAF50' : '#999' }]}>
+              {TAB_LABELS[index]}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -125,54 +146,49 @@ function JournalStack() {
 export default function AppNavigator() {
   return (
     <Tab.Navigator
-        screenOptions={({ route }) => ({
-          headerShown: false,
-          tabBarShowLabel: true,
-          tabBarActiveTintColor: '#4CAF50',
-          tabBarInactiveTintColor: '#999',
-          tabBarStyle: styles.tabBar,
-          tabBarLabelStyle: styles.tabLabel,
-          tabBarIcon: ({ focused }) => (
-            <TabBarIcon name={route.name} focused={focused} />
-          ),
-        })}
-      >
-        <Tab.Screen name="Home" component={HomeStack} />
-        <Tab.Screen name="Itinerary" component={ItineraryStack} />
-        <Tab.Screen name="Budget" component={BudgetStack} />
-        <Tab.Screen name="Explore" component={ExploreStack} />
-        <Tab.Screen name="Journal" component={JournalStack} />
-      </Tab.Navigator>
-
+      tabBar={(props) => <CustomTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
+    >
+      <Tab.Screen name="Home" component={HomeStack} />
+      <Tab.Screen name="Itinerary" component={ItineraryStack} />
+      <Tab.Screen name="Budget" component={BudgetStack} />
+      <Tab.Screen name="Explore" component={ExploreStack} />
+      <Tab.Screen name="Journal" component={JournalStack} />
+    </Tab.Navigator>
   );
 }
 
 const styles = StyleSheet.create({
-  tabBar: {
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    height: 64,
-    paddingBottom: 8,
-    paddingTop: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: -2 },
-    elevation: 8,
-  },
-  tabLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  tabIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tabIconFocused: {
-    backgroundColor: '#E8F5E9',
-  },
+tabBar: {
+  flexDirection: 'row',
+  backgroundColor: '#fff',
+  borderTopWidth: 1,
+  borderTopColor: '#F0F0F0',
+  height: 76,
+  shadowColor: '#000',
+  shadowOpacity: 0.08,
+  shadowRadius: 8,
+  shadowOffset: { width: 0, height: -2 },
+  elevation: 8,
+},
+tabItem: {
+  flex: 1,
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingTop: 0,
+  paddingBottom: 2,
+  gap: 0,
+},
+tabIcon: {
+  width: 70,
+  height: 70,
+  marginTop: -6,
+},
+
+tabLabel: {
+  fontSize: 11,
+  fontWeight: '600',
+  marginTop: -10,
+},
+
 });

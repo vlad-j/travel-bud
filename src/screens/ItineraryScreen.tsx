@@ -270,9 +270,11 @@ useFocusEffect(
     if (selectedDate) loadActivities();
   }, [selectedDate]);
 
-  async function loadData() { loadTrip(); }
+  async function loadData(tripId?: string) { loadTrip(tripId); }
 
-  async function loadTrip() {
+async function loadTrip(tripId?: string) {
+
+  
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 

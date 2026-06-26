@@ -230,32 +230,40 @@ export default function ProfileSettingsScreen() {
 
   useEffect(() => { loadProfile(); }, []);
 
-  async function loadProfile() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    setEmail(user.email ?? '');
+async function loadProfile() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  setEmail(user.email ?? '');
 
-    const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-    if (profileData) {
-      setName(profileData.name ?? '');
-      setCurrency(profileData.default_currency ?? 'EUR');
-      setHomeCountry(profileData.home_country ?? 'Romania');
-      setLanguage(profileData.language ?? 'English');
-      setDistanceUnits(profileData.distance_units ?? 'Kilometers');
-    } else {
-      setName(user.user_metadata?.full_name ?? '');
-    }
-
-    const { data: memberships } = await supabase.from('trip_members').select('trip_id').eq('user_id', user.id);
-    setTripCount(memberships?.length ?? 0);
-    setLoading(false);
+  const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  if (profileData) {
+    setName(profileData.name ?? '');
+    setCurrency(profileData.default_currency ?? 'EUR');
+    setHomeCountry(profileData.home_country ?? 'Romania');
+    setLanguage(profileData.language ?? 'English');
+    setDistanceUnits(profileData.distance_units ?? 'Kilometers');
+    setTravelStyle(profileData.travel_style ?? 'Mid-range');
+    setFlightSeat(profileData.flight_seat ?? 'Window');
+    setProfileVisibility(profileData.profile_visibility ?? 'partners');
+    setLocationSharing(profileData.location_sharing ?? 'partners');
+    setInvitePermission(profileData.invite_permission ?? 'everyone');
+    setShareActivity(profileData.share_activity ?? true);
+    setEmergencyName(profileData.emergency_contact_name ?? '');
+    setEmergencyPhone(profileData.emergency_contact_phone ?? '');
+  } else {
+    setName(user.user_metadata?.full_name ?? '');
   }
 
-  async function savePreference(key: string, value: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    await supabase.from('profiles').upsert({ id: user.id, [key]: value });
-  }
+  const { data: memberships } = await supabase.from('trip_members').select('trip_id').eq('user_id', user.id);
+  setTripCount(memberships?.length ?? 0);
+  setLoading(false);
+}
+
+async function savePreference(key: string, value: any) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from('profiles').upsert({ id: user.id, [key]: value });
+}
 
   async function handleSaveProfile() {
     setSavingProfile(true);
@@ -276,7 +284,13 @@ export default function ProfileSettingsScreen() {
 
   const currencyOptions = CURRENCIES.map((c) => `${c.code} (${c.symbol})`);
   const selectedCurrencyDisplay = CURRENCIES.find((c) => c.code === currency) ? `${currency} (${CURRENCIES.find((c) => c.code === currency)?.symbol})` : currency;
-
+const [profileVisibility, setProfileVisibility] = useState('partners');
+const [locationSharing, setLocationSharing] = useState('partners');
+const [invitePermission, setInvitePermission] = useState('everyone');
+const [shareActivity, setShareActivity] = useState(true);
+const [emergencyName, setEmergencyName] = useState('');
+const [emergencyPhone, setEmergencyPhone] = useState('');
+const [privacyVisible, setPrivacyVisible] = useState(false);
   const initials = name.split(' ').map((w) => w[0]).join('').toUpperCase() || '?';
 
   if (loading) {
@@ -335,8 +349,8 @@ export default function ProfileSettingsScreen() {
 
         <SectionHeader label="TRAVEL PREFERENCES" />
         <View style={styles.card}>
-          <SettingsRow icon={<Settings size={18} color="#555" />} label="Travel style" value={travelStyle} onPress={() => setTravelStyleVisible(true)} />
-          <SettingsRow icon={<Armchair size={18} color="#555" />} label="Preferred flight seat" value={flightSeat} onPress={() => setSeatVisible(true)} />
+         <SettingsRow icon={<Settings size={18} color="#555" />} label="Travel style" value={travelStyle} onPress={() => setTravelStyleVisible(true)} />
+<SettingsRow icon={<Armchair size={18} color="#555" />} label="Preferred flight seat" value={flightSeat} onPress={() => setSeatVisible(true)} />
           <SettingsRow icon={<Star size={18} color="#555" />} label="Frequent flyer programs" value="2 programs" onPress={() => setFlyerVisible(true)} />
           <SettingsRow icon={<Phone size={18} color="#555" />} label="Emergency contact" value="Set" onPress={() => setEmergencyVisible(true)} showDivider={false} />
         </View>
@@ -358,6 +372,64 @@ export default function ProfileSettingsScreen() {
           <SettingsRow icon={<FileText size={18} color="#555" />} label="Privacy policy" onPress={() => navigation.navigate('PrivacyPolicy')} />
           <SettingsRow icon={<Trash2 size={18} color="#EF4444" />} label="Delete account" onPress={() => {}} showDivider={false} destructive />
         </View>
+
+        <SectionHeader label="PRIVACY" />
+<View style={styles.card}>
+  <SettingsRow
+    icon={<Shield size={18} color="#555" />}
+    label="Profile visibility"
+    value={profileVisibility === 'everyone' ? 'Everyone' : profileVisibility === 'partners' ? 'Partners only' : 'Only me'}
+    onPress={() => setPrivacyVisible(true)}
+  />
+  <SettingsRow
+    icon={<MapPin size={18} color="#555" />}
+    label="Location sharing"
+    value={locationSharing === 'everyone' ? 'Everyone' : locationSharing === 'partners' ? 'Partners only' : 'Off'}
+    onPress={() => {
+      const opts = ['partners', 'everyone', 'off'];
+      const next = opts[(opts.indexOf(locationSharing) + 1) % opts.length];
+      setLocationSharing(next);
+      savePreference('location_sharing', next);
+    }}
+  />
+  <SettingsRow
+    icon={<Users size={18} color="#555" />}
+    label="Who can invite me"
+    value={invitePermission === 'everyone' ? 'Everyone' : 'Partners only'}
+    onPress={() => {
+      const next = invitePermission === 'everyone' ? 'partners' : 'everyone';
+      setInvitePermission(next);
+      savePreference('invite_permission', next);
+    }}
+  />
+  <SwitchRow
+    icon={<Bell size={18} color="#555" />}
+    label="Share activity with partner"
+    value={shareActivity}
+    onToggle={(v) => { setShareActivity(v); savePreference('share_activity', v); }}
+    showDivider={false}
+  />
+</View>
+
+
+<BottomSheet visible={privacyVisible} onClose={() => setPrivacyVisible(false)} title="Profile Visibility">
+  {['everyone', 'partners', 'only_me'].map((opt) => (
+    <TouchableOpacity
+      key={opt}
+      style={pickerStyles.option}
+      onPress={() => {
+        setProfileVisibility(opt);
+        savePreference('profile_visibility', opt);
+        setPrivacyVisible(false);
+      }}
+    >
+      <Text style={[pickerStyles.optionText, profileVisibility === opt && pickerStyles.optionTextActive]}>
+        {opt === 'everyone' ? 'Everyone' : opt === 'partners' ? 'Partners only' : 'Only me'}
+      </Text>
+      {profileVisibility === opt && <View style={pickerStyles.check}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>✓</Text></View>}
+    </TouchableOpacity>
+  ))}
+</BottomSheet>
 
         <TouchableOpacity style={styles.logoutBtn} onPress={async () => { await supabase.auth.signOut(); }}>
           <Text style={styles.logoutText}>Log out</Text>
@@ -386,13 +458,31 @@ export default function ProfileSettingsScreen() {
       </BottomSheet>
 
       {/* Emergency Contact */}
-      <BottomSheet visible={emergencyVisible} onClose={() => setEmergencyVisible(false)} title="Emergency Contact">
-        <Text style={sheetStyles.label}>Contact name</Text>
-        <TextInput style={sheetStyles.input} placeholder="Full name" placeholderTextColor="#C0C0C0" />
-        <Text style={sheetStyles.label}>Phone number</Text>
-        <TextInput style={sheetStyles.input} placeholder="+40 700 000 000" placeholderTextColor="#C0C0C0" keyboardType="phone-pad" />
-        <SheetButton label="Save Contact" onPress={() => setEmergencyVisible(false)} />
-      </BottomSheet>
+<BottomSheet visible={emergencyVisible} onClose={() => setEmergencyVisible(false)} title="Emergency Contact">
+  <Text style={sheetStyles.label}>Contact name</Text>
+  <TextInput
+    style={sheetStyles.input}
+    placeholder="Full name"
+    placeholderTextColor="#C0C0C0"
+    value={emergencyName}
+    onChangeText={setEmergencyName}
+  />
+  <Text style={sheetStyles.label}>Phone number</Text>
+  <TextInput
+    style={sheetStyles.input}
+    placeholder="+40 700 000 000"
+    placeholderTextColor="#C0C0C0"
+    keyboardType="phone-pad"
+    value={emergencyPhone}
+    onChangeText={setEmergencyPhone}
+  />
+  <SheetButton label="Save Contact" onPress={async () => {
+    await savePreference('emergency_contact_name', emergencyName);
+    await savePreference('emergency_contact_phone', emergencyPhone);
+    setEmergencyVisible(false);
+    Alert.alert('✅ Saved', 'Emergency contact saved.');
+  }} />
+</BottomSheet>
 
       {/* Frequent Flyer */}
       <BottomSheet visible={flyerVisible} onClose={() => setFlyerVisible(false)} title="Frequent Flyer Programs">
@@ -428,8 +518,8 @@ export default function ProfileSettingsScreen() {
         selected={homeCountry}
         onSelect={(val) => { setHomeCountry(val); savePreference('home_country', val); }}
       />
-      <PickerSheet visible={travelStyleVisible} onClose={() => setTravelStyleVisible(false)} title="Travel Style" options={TRAVEL_STYLES} selected={travelStyle} onSelect={setTravelStyle} />
-      <PickerSheet visible={seatVisible} onClose={() => setSeatVisible(false)} title="Preferred Flight Seat" options={SEAT_OPTIONS} selected={flightSeat} onSelect={setFlightSeat} />
+     <PickerSheet visible={travelStyleVisible} onClose={() => setTravelStyleVisible(false)} title="Travel Style" options={TRAVEL_STYLES} selected={travelStyle} onSelect={(val) => { setTravelStyle(val); savePreference('travel_style', val); }} />
+<PickerSheet visible={seatVisible} onClose={() => setSeatVisible(false)} title="Preferred Flight Seat" options={SEAT_OPTIONS} selected={flightSeat} onSelect={(val) => { setFlightSeat(val); savePreference('flight_seat', val); }} />
     </SafeAreaView>
   );
 }

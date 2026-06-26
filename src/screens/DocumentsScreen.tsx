@@ -208,37 +208,77 @@ export default function DocumentsScreen() {
     }, [])
   );
 
-  async function handlePickFile() {
+ async function handlePickFile() {
+  try {
+    const result = await DocumentPicker.getDocumentAsync({ 
+      type: ['application/pdf', 'image/*'], 
+      copyToCacheDirectory: true 
+    });
+    if (!result.canceled && result.assets?.[0]) {
+      setUploadedFile({ name: result.assets[0].name, uri: result.assets[0].uri });
+      setScreen('manual');
+    }
+  } catch { Alert.alert('Error', 'Could not pick file'); }
+}
+
+async function handleSaveManual() {
+  if (!manualTitle.trim() || !trip) return;
+  setSaving(true);
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) { setSaving(false); return; }
+
+  let fileUrl: string | null = null;
+
+  if (uploadedFile) {
     try {
-      const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
-      if (!result.canceled && result.assets?.[0]) {
-        setUploadedFile({ name: result.assets[0].name, uri: result.assets[0].uri });
-        setScreen('manual');
+      const fileExt = uploadedFile.name.split('.').pop() ?? 'pdf';
+      const fileName = `${user.id}/${trip.id}/${Date.now()}.${fileExt}`;
+
+const response = await fetch(uploadedFile.uri);
+const arrayBuffer = await response.arrayBuffer();
+const uint8Array = new Uint8Array(arrayBuffer);
+
+const { error: uploadError } = await supabase.storage
+  .from('documents')
+  .upload(fileName, uint8Array, {
+    contentType: uploadedFile.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg',
+    upsert: false,
+  });
+
+      if (uploadError) {
+        Alert.alert('Upload Error', uploadError.message);
+        setSaving(false);
+        return;
       }
-    } catch { Alert.alert('Error', 'Could not pick file'); }
+
+      const { data: urlData } = supabase.storage
+        .from('documents')
+        .getPublicUrl(fileName);
+
+      fileUrl = urlData?.publicUrl ?? null;
+    } catch (e: any) {
+      Alert.alert('Error', 'Could not upload file: ' + e.message);
+      setSaving(false);
+      return;
+    }
   }
 
-  async function handleSaveManual() {
-    if (!manualTitle.trim() || !trip) return;
-    setSaving(true);
+  const { data, error } = await supabase.from('documents').insert({
+    trip_id: trip.id,
+    user_id: user.id,
+    title: manualTitle.trim(),
+    type: manualType,
+    details: manualDetails || manualType,
+    expires_at: expiryDate ? expiryDate.toISOString().split('T')[0] : null,
+    file_url: fileUrl,
+    saved_offline: false,
+  }).select().single();
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data, error } = await supabase.from('documents').insert({
-      trip_id: trip.id,
-      user_id: user.id,
-      title: manualTitle.trim(),
-      type: manualType,
-      details: manualDetails || manualType,
-      expires_at: expiryDate ? expiryDate.toISOString().split('T')[0] : null,
-      saved_offline: false,
-    }).select().single();
-
-    if (error) { Alert.alert('Error', error.message); }
-    else { setDocuments((prev) => [data, ...prev]); setScreen('success'); }
-    setSaving(false);
-  }
+  if (error) { Alert.alert('Error', error.message); }
+  else { setDocuments((prev) => [data, ...prev]); setScreen('success'); }
+  setSaving(false);
+}
 
   async function handleDelete(doc: any) {
     Alert.alert('Delete document', 'Are you sure?', [

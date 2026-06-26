@@ -8,10 +8,10 @@ import {
   Dimensions,
   ActivityIndicator,
   FlatList,
+  Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
-import { BUDGET } from '../data/sampleData';
 import CartoonIcon from '../components/CartoonIcon';
 import StatusBadge from '../components/StatusBadge';
 import BudgetDonut from '../components/BudgetDonut';
@@ -29,13 +29,51 @@ const { width } = Dimensions.get('window');
 const HERO_H = 200;
 const CARD_WIDTH = width - 32;
 
+
+
 const QUICK_PILLS = [
-  { label: 'Packing', emoji: '🎒', screen: 'Packing' as const, color: '#4CAF50' },
-  { label: 'Documents', emoji: '📁', screen: 'Documents' as const, color: '#FF9800' },
-  { label: 'Accommodation', emoji: '🏠', screen: 'Accommodation' as const, color: '#9C27B0' },
-  { label: 'Transport', emoji: '✈️', screen: 'Transport' as const, color: '#2196F3' },
-  { label: 'Memories', emoji: '🎉', screen: 'MemoriesRecap' as const, color: '#FF9800' },
-  { label: 'Trip Settings', emoji: '⚙️', screen: 'TripSettings' as const, color: '#666' },
+    {
+    label: 'Packing',
+    icon: require('../../assets/icons/packing.png'),
+    screen: 'Packing' as const,
+    color: '#4CAF50',
+  },
+
+{
+    label: 'Documents',
+    icon: require('../../assets/icons/documents.png'),
+    screen: 'Documents' as const,
+    color: '#FF9800',
+  },
+
+  {
+    label: 'Accommodation',
+    icon: require('../../assets/icons/accom.png'),
+    screen: 'Accommodation' as const,
+    color: '#9C27B0',
+  },
+
+
+   {
+    label: 'Transport',
+    icon: require('../../assets/icons/transportation.png'),
+    screen: 'Transport' as const,
+    color: '#2196F3',
+  }, 
+   {
+    label: 'Memories',
+    icon: require('../../assets/icons/memories.png'),
+    screen: 'Memories' as const,
+    color: '#FF9800',
+  }, 
+  
+   {
+    label: 'Trip Settings',
+    icon: require('../../assets/icons/tripSettings.png'),
+    screen: 'TripSettings' as const,
+    color: '#666',
+  },
+ 
 ];
 
 function getDayNumber(startDate: string): number {
@@ -80,7 +118,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const flatListRef = useRef<FlatList>(null);
   const tripsLoadedRef = useRef(false);
-
+const [budgetData, setBudgetData] = useState({ total: 0, spent: 0, todaySpending: 0, percentUsed: 0 });
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       loadData();
@@ -89,16 +127,18 @@ export default function HomeScreen() {
   }, [navigation]);
 
   async function loadData() {
-    setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+  setLoading(true);
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) { setLoading(false); return; }
 
-    const { data: memberships } = await supabase
-      .from('trip_members')
-      .select('trip_id')
-      .eq('user_id', user.id);
+  const { data: memberships } = await supabase
+    .from('trip_members')
+    .select('trip_id')
+    .eq('user_id', user.id);
 
-    if (!memberships || memberships.length === 0) {
+  
+
+if (!memberships || memberships.length === 0) {
       setLoading(false);
       return;
     }
@@ -127,37 +167,67 @@ export default function HomeScreen() {
       setTrips(sorted);
 
       // Setam ref-ul DOAR la primul load
-      if (!tripsLoadedRef.current && sorted[0]) {
-        tripsLoadedRef.current = true;
-        currentTripIdRef.current = sorted[0].id;
-        setCurrentTripId(sorted[0].id);
-        currentTripIndexRef.current = 0;
-        setCurrentTripIndex(0);
-        const acts = await getTodayActivities(sorted[0].id);
-        setActivities(acts);
-      } else if (tripsLoadedRef.current) {
-        // La re-load, pastreaza indexul curent
-        const idx = currentTripIndexRef.current;
-        if (sorted[idx]) {
-          const acts = await getTodayActivities(sorted[idx].id);
-          setActivities(acts);
-        }
-      }
+if (!tripsLoadedRef.current && sorted[0]) {
+  tripsLoadedRef.current = true;
+  currentTripIdRef.current = sorted[0].id;
+  setCurrentTripId(sorted[0].id);
+  currentTripIndexRef.current = 0;
+  setCurrentTripIndex(0);
+  const acts = await getTodayActivities(sorted[0].id);
+  setActivities(acts);
+  await loadBudget(sorted[0].id, sorted[0].budget ?? 0);
+} else if (tripsLoadedRef.current) {
+  const idx = currentTripIndexRef.current;
+  if (sorted[idx]) {
+    const acts = await getTodayActivities(sorted[idx].id);
+    setActivities(acts);
+    await loadBudget(sorted[idx].id, sorted[idx].budget ?? 0);
+  }
+}
     }
 
     setLoading(false);
   }
 
-  async function onTripChange(index: number) {
-    currentTripIndexRef.current = index;
-    setCurrentTripIndex(index);
-    if (trips[index]) {
-      currentTripIdRef.current = trips[index].id;
-      setCurrentTripId(trips[index].id);
-      const acts = await getTodayActivities(trips[index].id);
-      setActivities(acts);
-    }
+async function onTripChange(index: number) {
+  currentTripIndexRef.current = index;
+  setCurrentTripIndex(index);
+  if (trips[index]) {
+    currentTripIdRef.current = trips[index].id;
+    setCurrentTripId(trips[index].id);
+    const acts = await getTodayActivities(trips[index].id);
+    setActivities(acts);
+    await loadBudget(trips[index].id, trips[index].budget ?? 0);
   }
+}
+
+  async function loadBudget(tripId: string, totalBudget: number) {
+  const today = new Date().toISOString().split('T')[0];
+
+  const { data: allExpenses } = await supabase
+    .from('expenses')
+    .select('amount, date')
+    .eq('trip_id', tripId);
+
+  const spent = (allExpenses ?? []).reduce((sum, e) => sum + Number(e.amount), 0);
+
+  const todaySpending = (allExpenses ?? [])
+    .filter(e => {
+      if (!e.date) return false;
+      const expenseDate = new Date(e.date).toISOString().split('T')[0];
+      return expenseDate === today;
+    })
+    .reduce((sum, e) => sum + Number(e.amount), 0);
+
+  const percentUsed = totalBudget > 0 ? Math.round((spent / totalBudget) * 100) : 0;
+
+  setBudgetData({
+    total: totalBudget,
+    spent: Math.round(spent),
+    todaySpending: Math.round(todaySpending),
+    percentUsed,
+  });
+}
 
   const currentTrip = trips[currentTripIndex];
   const currentDay = currentTrip ? getDayNumber(currentTrip.start_date) : 0;
@@ -303,23 +373,21 @@ export default function HomeScreen() {
           )}
         </View>
 
-        <View style={styles.gridWrap}>
-          {QUICK_PILLS.map((pill) => (
-            <TouchableOpacity
-              key={pill.label}
-              style={[styles.gridTile, { backgroundColor: pill.color + '18', borderColor: pill.color + '40' }]}
-              onPress={() => {
-                navigation.navigate(pill.screen, { tripId: currentTripIdRef.current });
-              }}
-              activeOpacity={0.75}
-            >
-              <View style={[styles.gridIconCircle, { backgroundColor: pill.color + '30' }]}>
-                <Text style={styles.gridEmoji}>{pill.emoji}</Text>
-              </View>
-              <Text style={[styles.gridLabel, { color: pill.color }]}>{pill.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+<View style={styles.gridWrap}>
+  {QUICK_PILLS.map((pill) => (
+    <TouchableOpacity
+      key={pill.label}
+      style={styles.gridTile}
+      onPress={() => navigation.navigate(pill.screen, { tripId: currentTripIdRef.current })}
+      activeOpacity={0.75}
+    >
+      <View style={styles.gridIconCircle}>
+        <Image source={pill.icon} style={styles.gridIconImage} resizeMode="cover" />
+      </View>
+      <Text style={[styles.gridLabel, { color: pill.color }]}>{pill.label}</Text>
+    </TouchableOpacity>
+  ))}
+</View>
 
         <SectionBlock
           title="TODAY'S ACTIVITIES"
@@ -368,18 +436,13 @@ export default function HomeScreen() {
         >
           <View style={styles.budgetCard}>
             <View style={styles.budgetLeft}>
-              <BudgetDonut percentage={BUDGET.percentUsed} size={108} strokeWidth={12} />
+              <BudgetDonut percentage={budgetData.percentUsed} size={108} strokeWidth={12} />
             </View>
             <View style={styles.budgetRight}>
-              <BudgetRow label="Total budget" value={`€${BUDGET.total.toLocaleString()}`} dotColor="#1A1A1A" />
-              <BudgetRow label="Spent so far" value={`€${BUDGET.spent.toLocaleString()}`} dotColor="#4CAF50" />
-              <BudgetRow label="Today's spending" value={`€${BUDGET.todaySpending}`} dotColor="#FF9800" />
-              <View style={styles.partnerRow}>
-                <Text style={styles.partnerText}>
-                  Raul owes you <Text style={styles.partnerAmt}>€{BUDGET.partnerOwes}</Text>
-                  {'  💛'}
-                </Text>
-              </View>
+              <BudgetRow label="Total budget" value={`€${budgetData.total.toLocaleString()}`} dotColor="#1A1A1A" />
+              <BudgetRow label="Spent so far" value={`€${budgetData.spent.toLocaleString()}`} dotColor="#4CAF50" />
+              <BudgetRow label="Today's spending" value={`€${budgetData.todaySpending}`} dotColor="#FF9800" />
+              
             </View>
             <View style={styles.walletEmojiWrap}>
               <WalletEmoji />
@@ -464,11 +527,13 @@ const styles = StyleSheet.create({
   paginationRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 8, gap: 6 },
   paginationDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CCC' },
   paginationDotActive: { width: 18, backgroundColor: '#4CAF50' },
-  gridWrap: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, paddingVertical: 8, gap: 8, justifyContent: 'space-between' },
-  gridTile: { width: (width - 16 * 2 - 8 * 2) / 3, aspectRatio: 1, borderRadius: 18, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', padding: 8, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
-  gridIconCircle: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  gridEmoji: { fontSize: 24 },
-  gridLabel: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  
+gridWrap: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, paddingVertical: 16, justifyContent: 'space-between', rowGap: 20 },
+gridTile: { width: '30%', alignItems: 'center', justifyContent: 'center', gap: 8 },
+gridIconCircle: { width: 80, height: 80, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+gridIconImage: { width: '100%', height: '100%' },
+gridEmoji: { fontSize: 48 },
+gridLabel: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
   sectionBlock: { marginHorizontal: 16, marginTop: 16, borderRadius: 20, overflow: 'hidden', backgroundColor: '#C8E6C9', borderWidth: 3, borderColor: '#C8E6C9' },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingTop: 12, paddingBottom: 24 },
   sectionTitleWrap: { flexDirection: 'row', alignItems: 'center' },

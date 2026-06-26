@@ -134,7 +134,7 @@ setTrip(tripData);
             <Text style={styles.backIcon}>‹</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Trip Overview</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('TripSettings')}>
+          <TouchableOpacity onPress={() => navigation.navigate('TripSettings', { tripId: trip.id })}>
             <Text style={{ fontSize: 22 }}>⋯</Text>
           </TouchableOpacity>
         </View>
