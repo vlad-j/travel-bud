@@ -63,7 +63,7 @@ const QUICK_PILLS = [
    {
     label: 'Memories',
     icon: require('../../assets/icons/memories.png'),
-    screen: 'Memories' as const,
+    screen: 'MemoriesRecap' as const,
     color: '#FF9800',
   }, 
   
@@ -89,7 +89,9 @@ function getTotalDays(startDate: string, endDate: string): number {
   return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 }
 
-function getActivityStatus(time: string): 'DONE' | 'NOW' | 'UPCOMING' {
+function getActivityStatus(time: string, status: string): 'DONE' | 'NOW' | 'UPCOMING' {
+  if (status === 'completed') return 'DONE';
+  if (status === 'in_progress') return 'NOW';
   const now = new Date();
   const [h, m] = time.split(':').map(Number);
   const activityMinutes = h * 60 + m;
@@ -116,15 +118,16 @@ export default function HomeScreen() {
   const currentTripIndexRef = useRef(0);
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const tripsLoadedRef = useRef(false);
 const [budgetData, setBudgetData] = useState({ total: 0, spent: 0, todaySpending: 0, percentUsed: 0 });
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadData();
-    });
-    return unsubscribe;
-  }, [navigation]);
+useEffect(() => {
+  const unsubscribe = navigation.addListener('focus', () => {
+    loadData();
+  });
+  return unsubscribe;
+}, [navigation]);
 
   async function loadData() {
   setLoading(true);
@@ -180,7 +183,7 @@ if (!tripsLoadedRef.current && sorted[0]) {
   const idx = currentTripIndexRef.current;
   if (sorted[idx]) {
     const acts = await getTodayActivities(sorted[idx].id);
-    setActivities(acts);
+    setActivities([...acts]);
     await loadBudget(sorted[idx].id, sorted[idx].budget ?? 0);
   }
 }
@@ -195,8 +198,12 @@ async function onTripChange(index: number) {
   if (trips[index]) {
     currentTripIdRef.current = trips[index].id;
     setCurrentTripId(trips[index].id);
+    setActivitiesLoading(true);
     const acts = await getTodayActivities(trips[index].id);
-    setActivities(acts);
+    console.log('activities for trip:', trips[index].id, acts);
+
+    setActivities([...acts]);
+    setActivitiesLoading(false);
     await loadBudget(trips[index].id, trips[index].budget ?? 0);
   }
 }
@@ -395,13 +402,14 @@ async function onTripChange(index: number) {
           textColor="#1B5E20"
           right={<Text style={styles.seeAll}>See all</Text>}
         >
-          {loading ? (
-            <ActivityIndicator color="#4CAF50" style={{ padding: 20 }} />
-          ) : activities.length > 0 ? (
+{activitiesLoading ? (
+  <ActivityIndicator color="#4CAF50" style={{ padding: 20 }} />
+) : activities.length > 0 ? (
             activities.map((activity) => {
-              const status = getActivityStatus(activity.time?.slice(0, 5) ?? '00:00');
+              const status = getActivityStatus(activity.time?.slice(0, 5) ?? '00:00', activity.status ?? 'upcoming');
               const categoryKey = activity.category?.toLowerCase() ?? 'default';
               const iconData = CATEGORY_ICONS[categoryKey] ?? CATEGORY_ICONS.default;
+              
               return (
                 <View
                   key={activity.id}

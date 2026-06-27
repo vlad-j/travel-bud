@@ -1,18 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ActivityIndicator,
-  Alert,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, Modal,
+  TextInput, KeyboardAvoidingView, Platform, Pressable, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
@@ -53,18 +43,12 @@ function getActivityStatus(time: string, status: string): 'DONE' | 'NOW' | 'UPCO
   return 'UPCOMING';
 }
 
-function AddActivityModal({
-  visible,
-  onClose,
-  tripId,
-  selectedDate,
-  onAdded,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  tripId: string;
-  selectedDate: string;
-  onAdded: () => void;
+function localDateStr(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function AddActivityModal({ visible, onClose, tripId, selectedDate, onAdded }: {
+  visible: boolean; onClose: () => void; tripId: string; selectedDate: string; onAdded: () => void;
 }) {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('activity');
@@ -76,49 +60,34 @@ function AddActivityModal({
   const [saving, setSaving] = useState(false);
   const locationTimeout = useRef<any>(null);
 
-async function handleLocationChange(text: string) {
-  setLocation(text);
-  if (locationTimeout.current) clearTimeout(locationTimeout.current);
-  if (text.length >= 3) {
-locationTimeout.current = setTimeout(async () => {
-  const results = await searchLocations(text);
-  setLocationSuggestions(results);
-}, 1000);
-  } else {
-    setLocationSuggestions([]);
+  async function handleLocationChange(text: string) {
+    setLocation(text);
+    if (locationTimeout.current) clearTimeout(locationTimeout.current);
+    if (text.length >= 3) {
+      locationTimeout.current = setTimeout(async () => {
+        const results = await searchLocations(text);
+        setLocationSuggestions(results);
+      }, 1000);
+    } else {
+      setLocationSuggestions([]);
+    }
   }
-}
 
   async function handleAdd() {
     if (!title.trim()) return;
     setSaving(true);
-
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-
     const { error } = await supabase.from('activities').insert({
-      trip_id: tripId,
-      title: title.trim(),
-      category,
-      date: selectedDate,
-      time: time || null,
-      location: location || null,
-      notes: notes || null,
-      status: 'upcoming',
-      created_by: user.id,
+      trip_id: tripId, title: title.trim(), category,
+      date: selectedDate, time: time || null, location: location || null,
+      notes: notes || null, status: 'upcoming', created_by: user.id,
     });
-
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      setTitle('');
-      setCategory('activity');
-      setTime('');
-      setLocation('');
-      setLocationSuggestions([]);
-      setNotes('');
-      onAdded();
-      onClose();
+    if (error) { Alert.alert('Error', error.message); }
+    else {
+      setTitle(''); setCategory('activity'); setTime('');
+      setLocation(''); setLocationSuggestions([]); setNotes('');
+      onAdded(); onClose();
     }
     setSaving(false);
   }
@@ -126,89 +95,46 @@ locationTimeout.current = setTimeout(async () => {
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.kvWrapper}
-        >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.kvWrapper}>
           <Pressable style={styles.bottomSheet} onPress={() => {}}>
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>Add Activity</Text>
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={styles.fieldLabel}>Title</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Sunrise at Mount Batur"
-                placeholderTextColor="#C0C0C0"
-                value={title}
-                onChangeText={setTitle}
-              />
+              <TextInput style={styles.input} placeholder="e.g. Sunrise at Mount Batur" placeholderTextColor="#C0C0C0" value={title} onChangeText={setTitle} />
 
               <Text style={styles.fieldLabel}>Category</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catRow}>
                 {CATEGORY_OPTIONS.map((opt) => (
-                  <TouchableOpacity
-                    key={opt.label}
-                    style={[styles.catChip, category === opt.label && styles.catChipActive]}
-                    onPress={() => setCategory(opt.label)}
-                  >
+                  <TouchableOpacity key={opt.label} style={[styles.catChip, category === opt.label && styles.catChipActive]} onPress={() => setCategory(opt.label)}>
                     <Text style={{ fontSize: 16 }}>{opt.emoji}</Text>
-                    <Text style={[styles.catChipText, category === opt.label && styles.catChipTextActive]}>
-                      {opt.label}
-                    </Text>
+                    <Text style={[styles.catChipText, category === opt.label && styles.catChipTextActive]}>{opt.label}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
 
               <Text style={styles.fieldLabel}>Time</Text>
-              <TouchableOpacity
-                style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
-                onPress={() => setShowTimePicker(true)}
-              >
-                <Text style={{ fontSize: 15, color: time ? '#1A1A1A' : '#C0C0C0' }}>
-                  {time || 'Pick time'}
-                </Text>
+              <TouchableOpacity style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]} onPress={() => setShowTimePicker(true)}>
+                <Text style={{ fontSize: 15, color: time ? '#1A1A1A' : '#C0C0C0' }}>{time || 'Pick time'}</Text>
                 <Text style={{ fontSize: 18 }}>🕐</Text>
               </TouchableOpacity>
               {showTimePicker && (
                 <DateTimePicker
-                  value={(() => {
-                    const d = new Date();
-                    if (time) { const [h, m] = time.split(':'); d.setHours(+h, +m); }
-                    return d;
-                  })()}
-                  mode="time"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  is24Hour={true}
+                  value={(() => { const d = new Date(); if (time) { const [h, m] = time.split(':'); d.setHours(+h, +m); } return d; })()}
+                  mode="time" display={Platform.OS === 'ios' ? 'spinner' : 'default'} is24Hour={true}
                   onChange={(_, date) => {
                     setShowTimePicker(Platform.OS === 'ios');
-                    if (date) {
-                      const h = date.getHours().toString().padStart(2, '0');
-                      const m = date.getMinutes().toString().padStart(2, '0');
-                      setTime(`${h}:${m}`);
-                    }
+                    if (date) { const h = date.getHours().toString().padStart(2, '0'); const m = date.getMinutes().toString().padStart(2, '0'); setTime(`${h}:${m}`); }
                   }}
                 />
               )}
 
               <Text style={styles.fieldLabel}>Location</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Ubud, Bali"
-                placeholderTextColor="#C0C0C0"
-                value={location}
-                onChangeText={handleLocationChange}
-              />
+              <TextInput style={styles.input} placeholder="e.g. Ubud, Bali" placeholderTextColor="#C0C0C0" value={location} onChangeText={handleLocationChange} />
               {locationSuggestions.length > 0 && (
                 <View style={styles.suggestions}>
                   {locationSuggestions.map((suggestion, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={styles.suggestionRow}
-                      onPress={() => {
-                        setLocation(suggestion);
-                        setLocationSuggestions([]);
-                      }}
-                    >
+                    <TouchableOpacity key={index} style={styles.suggestionRow} onPress={() => { setLocation(suggestion); setLocationSuggestions([]); }}>
                       <Text style={{ fontSize: 14 }}>📍</Text>
                       <Text style={styles.suggestionText} numberOfLines={2}>{suggestion}</Text>
                     </TouchableOpacity>
@@ -216,28 +142,11 @@ locationTimeout.current = setTimeout(async () => {
                 </View>
               )}
 
-              <Text style={styles.fieldLabel}>
-                Notes <Text style={styles.optional}>(optional)</Text>
-              </Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Add any extra details..."
-                placeholderTextColor="#C0C0C0"
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-                numberOfLines={3}
-              />
-              <TouchableOpacity
-                style={[styles.addActivityBtn, (!title.trim() || saving) && styles.addActivityBtnDisabled]}
-                onPress={handleAdd}
-                disabled={!title.trim() || saving}
-              >
-                {saving ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.addActivityBtnText}>Add Activity</Text>
-                )}
+              <Text style={styles.fieldLabel}>Notes <Text style={styles.optional}>(optional)</Text></Text>
+              <TextInput style={[styles.input, styles.textArea]} placeholder="Add any extra details..." placeholderTextColor="#C0C0C0" value={notes} onChangeText={setNotes} multiline numberOfLines={3} />
+
+              <TouchableOpacity style={[styles.addActivityBtn, (!title.trim() || saving) && styles.addActivityBtnDisabled]} onPress={handleAdd} disabled={!title.trim() || saving}>
+                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.addActivityBtnText}>Add Activity</Text>}
               </TouchableOpacity>
               <View style={{ height: 16 }} />
             </ScrollView>
@@ -260,33 +169,26 @@ export default function ItineraryScreen() {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
 
-useFocusEffect(
-    React.useCallback(() => {
-      loadData(currentTripIdRef.current ?? route.params?.tripId);
-    }, [])
-  );
+  useFocusEffect(React.useCallback(() => {
+    loadData(currentTripIdRef.current ?? route.params?.tripId);
+  }, []));
 
   useEffect(() => {
     if (selectedDate) loadActivities();
   }, [selectedDate]);
 
-  async function loadData(tripId?: string) { loadTrip(tripId); }
+  async function loadData(tripId?: string) {
+    loadTrip(tripId);
+  }
 
-async function loadTrip(tripId?: string) {
-
-  
+  async function loadTrip(tripId?: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: memberships } = await supabase
-      .from('trip_members')
-      .select('trip_id')
-      .eq('user_id', user.id);
-
+    const { data: memberships } = await supabase.from('trip_members').select('trip_id').eq('user_id', user.id);
     if (!memberships || memberships.length === 0) { setLoading(false); return; }
 
     const tripIds = memberships.map((m: any) => m.trip_id);
-
     let tripData: any = null;
 
     if (tripId) {
@@ -296,45 +198,43 @@ async function loadTrip(tripId?: string) {
       const { data: tripsData } = await supabase.from('trips').select('*').in('id', tripIds).eq('status', 'active').order('created_at', { ascending: false });
       tripData = tripsData?.[0] ?? null;
     }
-    if (!tripData) { setLoading(false); return; }
 
+    if (!tripData) { setLoading(false); return; }
     setTrip(tripData);
 
-    const start = new Date(tripData.start_date);
-    const end = new Date(tripData.end_date);
-    const totalDays = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const [syear, smonth, sday] = tripData.start_date.split('-').map(Number);
+    const [eyear, emonth, eday] = tripData.end_date.split('-').map(Number);
+
+    const startLocal = new Date(syear, smonth - 1, sday);
+    const endLocal = new Date(eyear, emonth - 1, eday);
+    const now = new Date();
+    const todayLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const totalDays = Math.round((endLocal.getTime() - startLocal.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     const daysArr = Array.from({ length: totalDays }, (_, i) => i + 1);
     setDays(daysArr);
 
-    const today = new Date();
-    const diff = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    const diff = Math.round((todayLocal.getTime() - startLocal.getTime()) / (1000 * 60 * 60 * 24));
     const currentDay = Math.max(1, Math.min(diff + 1, totalDays));
     setSelectedDay(currentDay);
 
-    const date = new Date(start);
-    date.setDate(date.getDate() + currentDay - 1);
-    setSelectedDate(date.toISOString().split('T')[0]);
+    const selectedDateObj = new Date(syear, smonth - 1, sday + diff);
+    setSelectedDate(localDateStr(selectedDateObj));
     setLoading(false);
   }
 
   async function loadActivities() {
     if (!trip || !selectedDate) return;
-    const { data } = await supabase
-      .from('activities')
-      .select('*')
-      .eq('trip_id', trip.id)
-      .eq('date', selectedDate)
-      .order('time', { ascending: true });
+    const { data } = await supabase.from('activities').select('*').eq('trip_id', trip.id).eq('date', selectedDate).order('time', { ascending: true });
     setActivities(data ?? []);
   }
 
   function selectDay(day: number) {
     setSelectedDay(day);
     if (!trip) return;
-    const start = new Date(trip.start_date);
-    const date = new Date(start);
-    date.setDate(date.getDate() + day - 1);
-    setSelectedDate(date.toISOString().split('T')[0]);
+    const [syear, smonth, sday] = trip.start_date.split('-').map(Number);
+    const dateObj = new Date(syear, smonth - 1, sday + day - 1);
+    setSelectedDate(localDateStr(dateObj));
   }
 
   async function toggleActivityStatus(activity: any) {
@@ -366,21 +266,10 @@ async function loadTrip(tripId?: string) {
         </View>
       ) : (
         <>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.dayScroll}
-            contentContainerStyle={styles.dayScrollContent}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayScroll} contentContainerStyle={styles.dayScrollContent}>
             {days.map((day) => (
-              <TouchableOpacity
-                key={day}
-                style={[styles.dayChip, selectedDay === day && styles.dayChipActive]}
-                onPress={() => selectDay(day)}
-              >
-                <Text style={[styles.dayChipText, selectedDay === day && styles.dayChipTextActive]}>
-                  Day {day}
-                </Text>
+              <TouchableOpacity key={day} style={[styles.dayChip, selectedDay === day && styles.dayChipActive]} onPress={() => selectDay(day)}>
+                <Text style={[styles.dayChipText, selectedDay === day && styles.dayChipTextActive]}>Day {day}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -395,60 +284,44 @@ async function loadTrip(tripId?: string) {
               <View style={styles.sectionHeader}>
                 <View style={styles.sectionTitleWrap}>
                   <Cloud size={16} color="#0D47A1" style={{ position: 'relative', marginRight: 6 }} />
-                  <Text style={[styles.sectionTitle, { color: '#0D47A1' }]}>
-                    DAY {selectedDay} · {selectedDate}
-                  </Text>
+                  <Text style={[styles.sectionTitle, { color: '#0D47A1' }]}>DAY {selectedDay} · {selectedDate}</Text>
                 </View>
                 <Sparkle color="#0D47A1" size={12} style={{ position: 'relative' }} />
               </View>
               <View style={styles.sectionCard}>
                 {activities.length === 0 ? (
-                  <Text style={{ padding: 20, color: '#888', textAlign: 'center' }}>
-                    No activities for this day
-                  </Text>
+                  <Text style={{ padding: 20, color: '#888', textAlign: 'center' }}>No activities for this day</Text>
                 ) : (
                   activities.map((activity, index) => {
                     const iconData = CATEGORY_ICONS[activity.category] ?? CATEGORY_ICONS.default;
                     const displayStatus = getActivityStatus(activity.time?.slice(0, 5) ?? '00:00', activity.status);
                     const statusBg = STATUS_BG[displayStatus] ?? '#fff';
-
                     return (
                       <View key={activity.id}>
-                        <TouchableOpacity
-                          activeOpacity={0.7}
-                          onPress={() => toggleActivityStatus(activity)}
-                        >
+                        <TouchableOpacity activeOpacity={0.7} onPress={() => toggleActivityStatus(activity)}>
                           <View style={[styles.activityRow, { backgroundColor: statusBg }]}>
                             <View style={styles.timeCol}>
                               <Text style={styles.time}>{activity.time?.slice(0, 5) ?? '--:--'}</Text>
-                              {index < activities.length - 1 && (
-                                <View style={styles.connector} />
-                              )}
+                              {index < activities.length - 1 && <View style={styles.connector} />}
                             </View>
                             <CartoonIcon emoji={iconData.icon} bg={iconData.bg} size={48} />
                             <View style={styles.content}>
                               <Text style={styles.activityTitle}>{activity.title}</Text>
-                              {activity.location ? (
-                                <Text style={styles.subtitle}>{activity.location}</Text>
-                              ) : null}
+                              {activity.location ? <Text style={styles.subtitle}>{activity.location}</Text> : null}
                               <View style={styles.categoryTag}>
                                 <Dot color="#999" size={4} style={{ position: 'relative' }} />
                                 <Text style={styles.categoryText}>{activity.category}</Text>
                               </View>
                             </View>
                             {displayStatus === 'DONE' ? (
-                              <View style={styles.checkCircle}>
-                                <Text style={styles.checkMark}>✓</Text>
-                              </View>
+                              <View style={styles.checkCircle}><Text style={styles.checkMark}>✓</Text></View>
                             ) : (
                               <StatusBadge status={displayStatus} small />
                             )}
                           </View>
                         </TouchableOpacity>
                         {index < activities.length - 1 && (
-                          <View style={styles.divider}>
-                            <DottedLine color="#E0E0E0" style={{ marginLeft: 24 }} />
-                          </View>
+                          <View style={styles.divider}><DottedLine color="#E0E0E0" style={{ marginLeft: 24 }} /></View>
                         )}
                       </View>
                     );
@@ -467,17 +340,10 @@ async function loadTrip(tripId?: string) {
               <Text style={styles.addIcon}>＋</Text>
               <Text style={styles.addText}>Add activity</Text>
             </TouchableOpacity>
-
             <View style={{ height: 24 }} />
           </ScrollView>
 
-          <AddActivityModal
-            visible={showAddModal}
-            onClose={() => setShowAddModal(false)}
-            tripId={trip?.id}
-            selectedDate={selectedDate}
-            onAdded={loadActivities}
-          />
+          <AddActivityModal visible={showAddModal} onClose={() => setShowAddModal(false)} tripId={trip?.id} selectedDate={selectedDate} onAdded={loadActivities} />
         </>
       )}
     </SafeAreaView>

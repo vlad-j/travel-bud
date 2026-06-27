@@ -164,7 +164,7 @@ tabBar: {
   backgroundColor: '#fff',
   borderTopWidth: 1,
   borderTopColor: '#F0F0F0',
-  height: 76,
+  height: 70,
   shadowColor: '#000',
   shadowOpacity: 0.08,
   shadowRadius: 8,
@@ -180,8 +180,8 @@ tabItem: {
   gap: 0,
 },
 tabIcon: {
-  width: 70,
-  height: 70,
+  width: 65,
+  height: 65,
   marginTop: -6,
 },
 
