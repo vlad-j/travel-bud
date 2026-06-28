@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase';
 import SectionBlock from '../components/SectionBlock';
 import { CURRENCIES } from '../data/staticData';
 import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
+import { generateTravelBook } from '../lib/TravelBook/generateTravelBook';
 
 const CURRENCY_FLAGS: Record<string, string> = {
   EUR: '🇪🇺', USD: '🇺🇸', GBP: '🇬🇧', JPY: '🇯🇵', IDR: '🇮🇩',
@@ -540,6 +541,14 @@ export default function TripSettingsScreen() {
             }} />
             <View style={styles.divider} />
             <SettingsRow icon="📋" label="Duplicate trip" tappable onPress={handleDuplicateTrip} />
+            <View style={styles.divider} />
+            <SettingsRow icon="📖" label="Generate Travel Book PDF" tappable onPress={() => {
+              if (!tripId) return;
+              Alert.alert('Generate Travel Book', 'This will create a beautiful PDF of your trip. It may take a few seconds.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Generate', onPress: () => generateTravelBook(tripId) },
+              ]);
+            }} />
           </SectionBlock>
 
           {/* DELETE */}

@@ -1,7 +1,6 @@
-// ─── Itinerary Auto-Create Helper ────────────────────────────────────────────
+// ─── Itinerary + Documents Auto-Create Helper ─────────────────────────────────
 // Called after Transport or Accommodation is saved.
-// Creates linked itinerary activities with safe deduplication.
-// Uses source_id + source_type + source_event_type for linking.
+// Creates linked itinerary activities and documents with safe deduplication.
 
 import { supabase } from './supabase';
 
@@ -23,7 +22,7 @@ function parseTimeStr(ts: string | null): { date: string | null; time: string | 
   }
 }
 
-// ─── Transport → Itinerary ────────────────────────────────────────────────────
+// ─── Transport → Itinerary + Documents ───────────────────────────────────────
 
 export async function createActivityFromTransport(
   transportId: string,
@@ -39,48 +38,67 @@ export async function createActivityFromTransport(
   },
   userId: string,
 ): Promise<void> {
-  // Dedup: check if activity already exists for this transport
-  const { data: existing } = await supabase
+  const { date, time } = parseTimeStr(transportData.departure_time ?? null);
+  const title = buildTransportTitle(transportData);
+  const category = transportData.type === 'Flight' ? 'flight' : 'transport';
+
+  // Dedup check for activity
+  const { data: existingActivity } = await supabase
     .from('activities')
     .select('id')
     .eq('source_id', transportId)
     .eq('source_type', 'transport')
     .limit(1);
 
-  if (existing && existing.length > 0) {
-    // Already exists — update it instead
-    const { date, time } = parseTimeStr(transportData.departure_time ?? null);
-    const title = buildTransportTitle(transportData);
-    await supabase
-      .from('activities')
-      .update({
-        title,
-        time: time ?? null,
-        date: date ?? undefined,
-        location: transportData.departure_location,
-      })
-      .eq('source_id', transportId)
-      .eq('source_type', 'transport');
-    return;
+  if (existingActivity && existingActivity.length > 0) {
+    // Update existing activity
+    await supabase.from('activities').update({
+      title,
+      time: time ?? null,
+      date: date ?? undefined,
+      location: transportData.departure_location,
+    }).eq('source_id', transportId).eq('source_type', 'transport');
+  } else {
+    // Insert new activity
+    await supabase.from('activities').insert({
+      trip_id: tripId,
+      title,
+      category,
+      date: date ?? null,
+      time: time ?? null,
+      location: transportData.departure_location,
+      status: 'upcoming',
+      created_by: userId,
+      source_id: transportId,
+      source_type: 'transport',
+      source_event_type: 'departure',
+    });
   }
 
-  const { date, time } = parseTimeStr(transportData.departure_time ?? null);
-  const title = buildTransportTitle(transportData);
-  const category = transportData.type === 'Flight' ? 'flight' : 'transport';
+  // Dedup check for document
+  const { data: existingDoc } = await supabase
+    .from('documents')
+    .select('id')
+    .eq('source_id', transportId)
+    .eq('source_type', 'transport')
+    .limit(1);
 
-  await supabase.from('activities').insert({
-    trip_id: tripId,
-    title,
-    category,
-    date: date ?? null,
-    time: time ?? null,
-    location: transportData.departure_location,
-    status: 'upcoming',
-    created_by: userId,
-    source_id: transportId,
-    source_type: 'transport',
-    source_event_type: 'departure',
-  });
+  if (!existingDoc || existingDoc.length === 0) {
+    const docTitle = transportData.type === 'Flight'
+      ? `${transportData.airline ?? 'Flight'} ${transportData.flight_number ?? ''} — ${transportData.departure_location} → ${transportData.arrival_location}`.trim()
+      : `${transportData.type}: ${transportData.departure_location} → ${transportData.arrival_location}`;
+
+    await supabase.from('documents').insert({
+      trip_id: tripId,
+      user_id: userId,
+      title: docTitle,
+      type: transportData.type === 'Flight' ? 'Flight Ticket' : 'Other',
+      details: date ? `Departure: ${date}${time ? ` at ${time}` : ''}` : 'No date set',
+      saved_offline: false,
+      source_id: transportId,
+      source_type: 'transport',
+    });
+  }
 }
 
 function buildTransportTitle(data: {
@@ -99,7 +117,7 @@ function buildTransportTitle(data: {
   return `${data.type}: ${data.departure_location} → ${data.arrival_location}`;
 }
 
-// ─── Accommodation → Itinerary ────────────────────────────────────────────────
+// ─── Accommodation → Itinerary + Documents ────────────────────────────────────
 
 export async function createActivitiesFromAccommodation(
   accommodationId: string,
@@ -114,8 +132,7 @@ export async function createActivitiesFromAccommodation(
 ): Promise<void> {
   // Check-in activity
   await upsertAccommodationActivity({
-    accommodationId,
-    tripId,
+    accommodationId, tripId,
     name: accommodationData.name,
     dateStr: accommodationData.check_in ?? null,
     address: accommodationData.address ?? null,
@@ -127,8 +144,7 @@ export async function createActivitiesFromAccommodation(
 
   // Check-out activity
   await upsertAccommodationActivity({
-    accommodationId,
-    tripId,
+    accommodationId, tripId,
     name: accommodationData.name,
     dateStr: accommodationData.check_out ?? null,
     address: accommodationData.address ?? null,
@@ -137,6 +153,38 @@ export async function createActivitiesFromAccommodation(
     titlePrefix: 'Check-out',
     userId,
   });
+
+  // Auto-create document (Hotel Confirmation)
+  const { data: existingDoc } = await supabase
+    .from('documents')
+    .select('id')
+    .eq('source_id', accommodationId)
+    .eq('source_type', 'accommodation')
+    .limit(1);
+
+  if (!existingDoc || existingDoc.length === 0) {
+    const checkInDate = accommodationData.check_in
+      ? localDateStr(new Date(accommodationData.check_in))
+      : null;
+    const checkOutDate = accommodationData.check_out
+      ? localDateStr(new Date(accommodationData.check_out))
+      : null;
+
+    await supabase.from('documents').insert({
+      trip_id: tripId,
+      user_id: userId,
+      title: `${accommodationData.name} — Confirmation`,
+      type: 'Hotel Confirmation',
+      details: [
+        accommodationData.address ?? null,
+        checkInDate ? `Check-in: ${checkInDate}` : null,
+        checkOutDate ? `Check-out: ${checkOutDate}` : null,
+      ].filter(Boolean).join(' · '),
+      saved_offline: false,
+      source_id: accommodationId,
+      source_type: 'accommodation',
+    });
+  }
 }
 
 async function upsertAccommodationActivity(params: {
@@ -153,7 +201,6 @@ async function upsertAccommodationActivity(params: {
   const { date, time } = parseTimeStr(params.dateStr);
   const title = `${params.titlePrefix}: ${params.name}`;
 
-  // Dedup check
   const { data: existing } = await supabase
     .from('activities')
     .select('id')
@@ -163,22 +210,17 @@ async function upsertAccommodationActivity(params: {
     .limit(1);
 
   if (existing && existing.length > 0) {
-    // Update existing
-    await supabase
-      .from('activities')
-      .update({
-        title,
-        date: date ?? null,
-        time: time ?? null,
-        location: params.address ?? null,
-      })
-      .eq('source_id', params.accommodationId)
+    await supabase.from('activities').update({
+      title,
+      date: date ?? null,
+      time: time ?? null,
+      location: params.address ?? null,
+    }).eq('source_id', params.accommodationId)
       .eq('source_type', 'accommodation')
       .eq('source_event_type', params.eventType);
     return;
   }
 
-  // Insert new
   await supabase.from('activities').insert({
     trip_id: params.tripId,
     title,
@@ -200,9 +242,16 @@ export async function deleteActivitiesBySource(
   sourceId: string,
   sourceType: 'transport' | 'accommodation',
 ): Promise<void> {
-  await supabase
-    .from('activities')
-    .delete()
+  await supabase.from('activities').delete()
+    .eq('source_id', sourceId)
+    .eq('source_type', sourceType);
+}
+
+export async function deleteDocumentsBySource(
+  sourceId: string,
+  sourceType: 'transport' | 'accommodation',
+): Promise<void> {
+  await supabase.from('documents').delete()
     .eq('source_id', sourceId)
     .eq('source_type', sourceType);
 }

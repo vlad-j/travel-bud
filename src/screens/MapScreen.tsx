@@ -32,6 +32,7 @@ export default function MapScreen() {
   const [trip, setTrip] = useState<any>(null);
   const [destinations, setDestinations] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
+  const [accommodations, setAccommodations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const navigation = useNavigation<any>();
   const statusBarHeight = useStatusBarHeight();
@@ -60,6 +61,13 @@ export default function MapScreen() {
       .order('date', { ascending: true })
       .limit(20);
     setActivities(acts ?? []);
+
+    const { data: accoms } = await supabase
+      .from('accommodations')
+      .select('id, name, address, check_in, check_out')
+      .eq('trip_id', tripId)
+      .not('address', 'is', null);
+    setAccommodations(accoms ?? []);
 
     setLoading(false);
   }
@@ -168,6 +176,30 @@ export default function MapScreen() {
                 ))}
               </>
             )}
+
+            {/* Accommodation pins */}
+            {accommodations.length > 0 && (
+              <>
+                <Text style={styles.subSectionTitle}>🏨 ACCOMMODATIONS</Text>
+                {accommodations.map(acc => (
+                  <View key={acc.id} style={styles.accomCard}>
+                    <View style={styles.accomIcon}>
+                      <Text style={{ fontSize: 24 }}>🏨</Text>
+                    </View>
+                    <View style={styles.accomInfo}>
+                      <Text style={styles.accomName}>{acc.name}</Text>
+                      {acc.address ? <Text style={styles.accomAddress}>📍 {acc.address}</Text> : null}
+                      {acc.check_in ? (
+                        <Text style={styles.accomDates}>
+                          {new Date(acc.check_in).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                          {acc.check_out ? ` → ${new Date(acc.check_out).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
+              </>
+            )}
           </>
         )}
 
@@ -263,4 +295,11 @@ const styles = StyleSheet.create({
   actLocation: { fontSize: 12, color: '#888', marginTop: 2 },
   actDate: { fontSize: 11, color: '#BBB', marginTop: 2 },
   footerDecor: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 16 },
+  subSectionTitle: { fontSize: 11, fontWeight: '700', color: '#888', letterSpacing: 0.8, marginTop: 16, marginBottom: 10 },
+  accomCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
+  accomIcon: { width: 56, height: 56, borderRadius: 14, backgroundColor: '#F3E5F5', alignItems: 'center', justifyContent: 'center' },
+  accomInfo: { flex: 1 },
+  accomName: { fontSize: 15, fontWeight: '700', color: '#1A1A1A' },
+  accomAddress: { fontSize: 12, color: '#888', marginTop: 3 },
+  accomDates: { fontSize: 12, color: '#9C27B0', fontWeight: '600', marginTop: 3 },
 });

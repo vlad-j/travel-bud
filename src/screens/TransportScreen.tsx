@@ -12,7 +12,7 @@ import StatusBadge from '../components/StatusBadge';
 import { MenuSheet } from '../components/BottomSheet';
 import BottomSheet, { SheetButton } from '../components/BottomSheet';
 import { Dot, Sparkle } from '../components/TravelDecorations';
-import { createActivityFromTransport, deleteActivitiesBySource } from '../lib/itineraryAutoCreate';
+import { createActivityFromTransport, deleteActivitiesBySource, deleteDocumentsBySource } from '../lib/itineraryAutoCreate';
 import SectionBlock from '../components/SectionBlock';
 
 const TRANSPORT_TYPES = ['Train', 'Ferry', 'Bus', 'Taxi', 'Rental Car'];
@@ -210,8 +210,9 @@ export default function TransportScreen() {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
-          // Delete linked itinerary activities first
+          // Delete linked itinerary activities and documents
           await deleteActivitiesBySource(id, 'transport');
+          await deleteDocumentsBySource(id, 'transport');
           await supabase.from('transport').delete().eq('id', id);
           await loadData();
         },

@@ -17,7 +17,7 @@ import {
 } from '../components/TravelBuddyIcons';
 import { supabase } from '../lib/supabase';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
-import { createActivitiesFromAccommodation, deleteActivitiesBySource } from '../lib/itineraryAutoCreate';
+import { createActivitiesFromAccommodation, deleteActivitiesBySource, deleteDocumentsBySource } from '../lib/itineraryAutoCreate';
 import { parseBookingPDF, ParsedAccommodation } from '../lib/pdfParser';
 
 const { width } = Dimensions.get('window');
@@ -222,7 +222,43 @@ async function handlePickFile() {
     }
 
     setSaving(false);
-    setScreen('success');
+
+    // Prompt to add accommodation cost to budget
+    if (data && priceForStay && parseFloat(priceForStay) > 0) {
+      const { data: members } = await supabase
+        .from('trip_members')
+        .select('user_id, profiles:user_id(id, name, email)')
+        .eq('trip_id', trip.id);
+
+      Alert.alert(
+        '🏨 Add to budget?',
+        `Add ${trip.currency ?? 'EUR'} ${priceForStay} for "${name.trim()}" to your trip budget?`,
+        [
+          { text: 'Skip', style: 'cancel', onPress: () => setScreen('success') },
+          {
+            text: 'Add expense',
+            onPress: async () => {
+              const { data: { user: currentUser } } = await supabase.auth.getUser();
+              if (currentUser) {
+                await supabase.from('expenses').insert({
+                  trip_id: trip.id,
+                  title: `Accommodation: ${name.trim()}`,
+                  amount: parseFloat(priceForStay.replace(/[^0-9.]/g, '')),
+                  currency: trip.currency ?? 'EUR',
+                  category: 'accommodation',
+                  date: new Date().toISOString(),
+                  paid_by: currentUser.id,
+                  notes: `${platform} · ${address || 'No address'}`,
+                });
+              }
+              setScreen('success');
+            },
+          },
+        ]
+      );
+    } else {
+      setScreen('success');
+    }
   }
 
   const toggleAmenity = (a: string) => {
