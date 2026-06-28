@@ -9,9 +9,8 @@ import { Sparkle, Dot } from '../components/TravelDecorations';
 import { supabase } from '../lib/supabase';
 import SectionBlock from '../components/SectionBlock';
 import { CURRENCIES } from '../data/staticData';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 
-
-// ─── Flag map pentru cele mai comune valute ────────────────────────────────────
 const CURRENCY_FLAGS: Record<string, string> = {
   EUR: '🇪🇺', USD: '🇺🇸', GBP: '🇬🇧', JPY: '🇯🇵', IDR: '🇮🇩',
   CHF: '🇨🇭', AUD: '🇦🇺', CAD: '🇨🇦', CNY: '🇨🇳', INR: '🇮🇳',
@@ -20,176 +19,40 @@ const CURRENCY_FLAGS: Record<string, string> = {
   DKK: '🇩🇰', PLN: '🇵🇱', CZK: '🇨🇿', HUF: '🇭🇺', RON: '🇷🇴',
   TRY: '🇹🇷', AED: '🇦🇪', SAR: '🇸🇦', ZAR: '🇿🇦', BRL: '🇧🇷',
   MXN: '🇲🇽', ARS: '🇦🇷', RUB: '🇷🇺', UAH: '🇺🇦', EGP: '🇪🇬',
-  MAD: '🇲🇦', NGN: '🇳🇬', KES: '🇰🇪', GHS: '🇬🇭', TZS: '🇹🇿',
 };
 
-const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'IDR', 'JPY', 'CHF', 'AUD', 'CAD'];
+const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'RON', 'JPY', 'CHF', 'AUD', 'CAD'];
 
-// ─── Currency Picker Modal ─────────────────────────────────────────────────────
-function CurrencyPickerModal({ visible, selected, onSelect, onClose }: {
-  visible: boolean; selected: string; onSelect: (code: string) => void; onClose: () => void;
-}) {
-  const [search, setSearch] = useState('');
-  const filtered = search.trim()
-    ? CURRENCIES.filter(c =>
-        c.code.toLowerCase().includes(search.toLowerCase()) ||
-        c.name.toLowerCase().includes(search.toLowerCase())
-      )
-    : CURRENCIES;
-
-  return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={cpStyles.overlay}>
-        <View style={cpStyles.sheet}>
-          <View style={cpStyles.handle} />
-          <Text style={cpStyles.title}>Select Currency</Text>
-
-          <View style={cpStyles.searchBar}>
-            <Text style={{ fontSize: 16 }}>🔍</Text>
-            <TextInput
-              style={cpStyles.searchInput}
-              placeholder="Search currency..."
-              placeholderTextColor="#C0C0C0"
-              value={search}
-              onChangeText={setSearch}
-              autoFocus={false}
-            />
-            {search ? (
-              <TouchableOpacity onPress={() => setSearch('')}>
-                <Text style={{ fontSize: 16, color: '#999' }}>✕</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-
-          {!search.trim() && (
-            <View style={cpStyles.commonWrap}>
-              <Text style={cpStyles.commonLabel}>COMMON</Text>
-              <View style={cpStyles.commonGrid}>
-                {COMMON_CURRENCIES.map(code => (
-                  <TouchableOpacity
-                    key={code}
-                    style={[cpStyles.commonPill, selected === code && cpStyles.commonPillSelected]}
-                    onPress={() => { onSelect(code); onClose(); }}
-                  >
-                    <Text style={{ fontSize: 20 }}>{CURRENCY_FLAGS[code] ?? '💱'}</Text>
-                    <Text style={[cpStyles.commonCode, selected === code && cpStyles.commonCodeSelected]}>{code}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <Text style={[cpStyles.commonLabel, { marginTop: 14 }]}>ALL CURRENCIES</Text>
-            </View>
-          )}
-
-          <FlatList
-            data={filtered}
-            keyExtractor={item => item.code}
-            style={{ flex: 1 }}
-            keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[cpStyles.currItem, selected === item.code && cpStyles.currItemSelected]}
-                onPress={() => { onSelect(item.code); onClose(); }}
-              >
-                <Text style={{ fontSize: 22, width: 32 }}>{CURRENCY_FLAGS[item.code] ?? '💱'}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={cpStyles.currName}>{item.name}</Text>
-                </View>
-                <Text style={cpStyles.currCode}>{item.code}</Text>
-                {selected === item.code && <Text style={cpStyles.currCheck}>✓</Text>}
-              </TouchableOpacity>
-            )}
-            ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: '#F5F5F5' }} />}
-          />
-
-          <TouchableOpacity style={cpStyles.closeBtn} onPress={onClose}>
-            <Text style={cpStyles.closeBtnText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-const cpStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '85%', paddingTop: 12 },
-  handle: { width: 36, height: 4, backgroundColor: '#E0E0E0', borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
-  title: { fontSize: 17, fontWeight: '700', color: '#1A1A1A', paddingHorizontal: 16, marginBottom: 12 },
-  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F5F5F5', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginHorizontal: 16, marginBottom: 12 },
-  searchInput: { flex: 1, fontSize: 14, color: '#1A1A1A' },
-  commonWrap: { paddingHorizontal: 16 },
-  commonLabel: { fontSize: 11, fontWeight: '700', color: '#999', letterSpacing: 0.8, marginBottom: 8 },
-  commonGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
-  commonPill: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F5F5', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 4, borderWidth: 1, borderColor: '#EBEBEB', minWidth: 64 },
-  commonPillSelected: { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' },
-  commonCode: { fontSize: 11, fontWeight: '700', color: '#666' },
-  commonCodeSelected: { color: '#2E7D32' },
-  currItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13 },
-  currItemSelected: { backgroundColor: '#F1F8E9' },
-  currName: { fontSize: 14, color: '#1A1A1A', fontWeight: '500' },
-  currCode: { fontSize: 13, color: '#888', marginRight: 6 },
-  currCheck: { fontSize: 16, color: '#4CAF50' },
-  closeBtn: { margin: 16, backgroundColor: '#F5F5F5', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  closeBtnText: { fontSize: 15, fontWeight: '600', color: '#666' },
-});
-
-// ─── Scroll Wheel Date Picker ──────────────────────────────────────────────────
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const ITEM_HEIGHT = 48;
 
 function WheelColumn({ items, selectedIndex, onSelect }: {
   items: string[]; selectedIndex: number; onSelect: (index: number) => void;
 }) {
-  const scrollRef = useRef<ScrollView>(null);
-  const containerHeight = ITEM_HEIGHT * 5;
-
-useEffect(() => {
-    if (scrollRef.current) {
-      setTimeout(() => {
-        scrollRef.current?.scrollTo({ y: selectedIndex * ITEM_HEIGHT, animated: false });
-      }, 200);
-    }
+  const ref = useRef<ScrollView>(null);
+  useEffect(() => {
+    ref.current?.scrollTo({ y: selectedIndex * ITEM_HEIGHT, animated: false });
   }, [selectedIndex]);
-
   return (
-    <View style={{ width: '100%', height: containerHeight, overflow: 'hidden' }}>
-      <View style={{
-        position: 'absolute',
-        top: ITEM_HEIGHT * 2,
-        left: 0, right: 0,
-        height: ITEM_HEIGHT,
-        backgroundColor: '#E8F5E9',
-        borderRadius: 12,
-      }} pointerEvents="none" />
+    <View style={wheelStyles.col}>
+      <View style={wheelStyles.highlight} pointerEvents="none" />
       <ScrollView
-        ref={scrollRef}
-        style={{ height: containerHeight }}
-        contentContainerStyle={{ paddingVertical: ITEM_HEIGHT * 2 }}
+        ref={ref}
         showsVerticalScrollIndicator={false}
         snapToInterval={ITEM_HEIGHT}
-        snapToAlignment="center"
         decelerationRate="fast"
+        contentContainerStyle={{ paddingVertical: ITEM_HEIGHT * 2 }}
         onMomentumScrollEnd={e => {
           const index = Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT);
           onSelect(Math.max(0, Math.min(index, items.length - 1)));
         }}
       >
         {items.map((item, i) => (
-          <TouchableOpacity
-            key={i}
-            style={{ height: ITEM_HEIGHT, justifyContent: 'center', alignItems: 'center' }}
-            onPress={() => {
-              onSelect(i);
-              scrollRef.current?.scrollTo({ y: i * ITEM_HEIGHT, animated: true });
-            }}
-          >
-            <Text style={{
-              fontSize: i === selectedIndex ? 20 : 15,
-              color: i === selectedIndex ? '#2E7D32' : '#BBBBBB',
-              fontWeight: i === selectedIndex ? '700' : '400',
-            }}>
-              {item}
-            </Text>
+          <TouchableOpacity key={i} style={wheelStyles.item} onPress={() => {
+            onSelect(i);
+            ref.current?.scrollTo({ y: i * ITEM_HEIGHT, animated: true });
+          }}>
+            <Text style={[wheelStyles.itemText, i === selectedIndex && wheelStyles.itemSelected]}>{item}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -199,10 +62,7 @@ useEffect(() => {
 
 const wheelStyles = StyleSheet.create({
   col: { flex: 1, height: ITEM_HEIGHT * 5, overflow: 'hidden', position: 'relative' },
-  highlight: {
-    position: 'absolute', top: ITEM_HEIGHT * 2, left: 6, right: 6,
-    height: ITEM_HEIGHT, backgroundColor: '#E8F5E9', borderRadius: 12, zIndex: 0,
-  },
+  highlight: { position: 'absolute', top: ITEM_HEIGHT * 2, left: 6, right: 6, height: ITEM_HEIGHT, backgroundColor: '#E8F5E9', borderRadius: 12, zIndex: 0 },
   item: { height: ITEM_HEIGHT, justifyContent: 'center', alignItems: 'center' },
   itemText: { fontSize: 16, color: '#BBBBBB', fontWeight: '400' },
   itemSelected: { fontSize: 18, color: '#2E7D32', fontWeight: '700' },
@@ -216,7 +76,6 @@ function DatePickerModal({ visible, value, title, onSelect, onClose }: {
   const [day, setDay] = useState(parsed.getDate() - 1);
   const [month, setMonth] = useState(parsed.getMonth());
   const [year, setYear] = useState(parsed.getFullYear() - 2020);
-
   const years = Array.from({ length: 20 }, (_, i) => String(2020 + i));
   const days = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
 
@@ -233,8 +92,7 @@ function DatePickerModal({ visible, value, title, onSelect, onClose }: {
     const y = 2020 + year;
     const m = month + 1;
     const d = day + 1;
-    const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    onSelect(dateStr);
+    onSelect(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
     onClose();
   }
 
@@ -244,22 +102,11 @@ function DatePickerModal({ visible, value, title, onSelect, onClose }: {
         <View style={dpStyles.sheet}>
           <View style={dpStyles.handle} />
           <Text style={dpStyles.title}>{title}</Text>
-
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 24, height: ITEM_HEIGHT * 5 }}>
-            <View style={dpStyles.colWrap}>
-              <Text style={dpStyles.colLabel}>Day</Text>
-              <WheelColumn items={days} selectedIndex={day} onSelect={setDay} />
-            </View>
-            <View style={dpStyles.colWrap}>
-              <Text style={dpStyles.colLabel}>Month</Text>
-              <WheelColumn items={MONTHS} selectedIndex={month} onSelect={setMonth} />
-            </View>
-            <View style={dpStyles.colWrap}>
-              <Text style={dpStyles.colLabel}>Year</Text>
-              <WheelColumn items={years} selectedIndex={year} onSelect={setYear} />
-            </View>
+          <View style={dpStyles.wheelsRow}>
+            <View style={dpStyles.colWrap}><Text style={dpStyles.colLabel}>Day</Text><WheelColumn items={days} selectedIndex={day} onSelect={setDay} /></View>
+            <View style={dpStyles.colWrap}><Text style={dpStyles.colLabel}>Month</Text><WheelColumn items={MONTHS} selectedIndex={month} onSelect={setMonth} /></View>
+            <View style={dpStyles.colWrap}><Text style={dpStyles.colLabel}>Year</Text><WheelColumn items={years} selectedIndex={year} onSelect={setYear} /></View>
           </View>
-
           <TouchableOpacity style={dpStyles.confirmBtn} onPress={handleConfirm}>
             <Text style={dpStyles.confirmText}>Confirm</Text>
           </TouchableOpacity>
@@ -286,44 +133,86 @@ const dpStyles = StyleSheet.create({
   cancelText: { fontSize: 15, fontWeight: '600', color: '#666' },
 });
 
-// ─── Invite Modal ──────────────────────────────────────────────────────────────
-function InviteModal({ visible, tripCode, onClose }: { visible: boolean; tripCode: string; onClose: () => void }) {
+function CurrencyPickerModal({ visible, selected, onSelect, onClose }: {
+  visible: boolean; selected: string; onSelect: (code: string) => void; onClose: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const filtered = search.trim()
+    ? CURRENCIES.filter(c => c.code.toLowerCase().includes(search.toLowerCase()) || c.name.toLowerCase().includes(search.toLowerCase()))
+    : CURRENCIES;
+
   return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={invStyles.overlay}>
-        <View style={invStyles.box}>
-          <Text style={invStyles.title}>🔗 Invite Traveler</Text>
-          <Text style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>Share this code with your travel partner:</Text>
-          <View style={invStyles.codeBox}>
-            <Text style={invStyles.code}>{tripCode}</Text>
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={cpStyles.overlay}>
+        <View style={cpStyles.sheet}>
+          <View style={cpStyles.handle} />
+          <Text style={cpStyles.title}>Select Currency</Text>
+          <View style={cpStyles.searchBar}>
+            <Text style={{ fontSize: 16 }}>🔍</Text>
+            <TextInput style={cpStyles.searchInput} placeholder="Search currency..." placeholderTextColor="#C0C0C0" value={search} onChangeText={setSearch} />
+            {search ? <TouchableOpacity onPress={() => setSearch('')}><Text style={{ fontSize: 16, color: '#999' }}>✕</Text></TouchableOpacity> : null}
           </View>
-          <TouchableOpacity style={invStyles.shareBtn} onPress={() =>
-            Share.share({ message: `Join my trip on Ultimate Travel Buddy! Use code: ${tripCode}` })
-          }>
-            <Text style={invStyles.shareBtnText}>📤 Share Code</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={invStyles.cancelBtn} onPress={onClose}>
-            <Text style={invStyles.cancelText}>Close</Text>
-          </TouchableOpacity>
+          {!search.trim() && (
+            <View style={cpStyles.commonWrap}>
+              <Text style={cpStyles.commonLabel}>POPULAR</Text>
+              <View style={cpStyles.commonGrid}>
+                {COMMON_CURRENCIES.map(code => (
+                  <TouchableOpacity key={code} style={[cpStyles.commonPill, selected === code && cpStyles.commonPillSelected]} onPress={() => { onSelect(code); onClose(); }}>
+                    <Text style={{ fontSize: 20 }}>{CURRENCY_FLAGS[code] ?? '💱'}</Text>
+                    <Text style={[cpStyles.commonCode, selected === code && cpStyles.commonCodeSelected]}>{code}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={[cpStyles.commonLabel, { marginTop: 14 }]}>ALL CURRENCIES</Text>
+            </View>
+          )}
+          <FlatList
+            data={filtered}
+            keyExtractor={item => item.code}
+            style={{ flex: 1 }}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => (
+              <TouchableOpacity style={[cpStyles.currItem, selected === item.code && cpStyles.currItemSelected]} onPress={() => { onSelect(item.code); onClose(); }}>
+                <Text style={{ fontSize: 22, width: 32 }}>{CURRENCY_FLAGS[item.code] ?? '💱'}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={cpStyles.currName}>{item.name}</Text>
+                  <Text style={cpStyles.currCode}>{item.code}</Text>
+                </View>
+                {selected === item.code && <Text style={cpStyles.currCheck}>✓</Text>}
+              </TouchableOpacity>
+            )}
+            ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: '#F5F5F5' }} />}
+          />
+          <TouchableOpacity style={cpStyles.closeBtn} onPress={onClose}><Text style={cpStyles.closeBtnText}>Cancel</Text></TouchableOpacity>
         </View>
       </View>
     </Modal>
   );
 }
 
-const invStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 32 },
-  box: { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%' },
-  title: { fontSize: 16, fontWeight: '700', color: '#1A1A1A', marginBottom: 8 },
-  codeBox: { backgroundColor: '#E8F5E9', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 16 },
-  code: { fontSize: 32, fontWeight: '900', color: '#2E7D32', letterSpacing: 6 },
-  shareBtn: { backgroundColor: '#4CAF50', borderRadius: 12, paddingVertical: 13, alignItems: 'center', marginBottom: 8 },
-  shareBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  cancelBtn: { backgroundColor: '#F5F5F5', borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
-  cancelText: { fontSize: 14, fontWeight: '600', color: '#666' },
+const cpStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '85%', paddingTop: 12 },
+  handle: { width: 36, height: 4, backgroundColor: '#E0E0E0', borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
+  title: { fontSize: 17, fontWeight: '700', color: '#1A1A1A', paddingHorizontal: 16, marginBottom: 12 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F5F5F5', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginHorizontal: 16, marginBottom: 12 },
+  searchInput: { flex: 1, fontSize: 14, color: '#1A1A1A' },
+  commonWrap: { paddingHorizontal: 16 },
+  commonLabel: { fontSize: 11, fontWeight: '700', color: '#999', letterSpacing: 0.8, marginBottom: 8 },
+  commonGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  commonPill: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F5F5', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 4, borderWidth: 1, borderColor: '#EBEBEB', minWidth: 64 },
+  commonPillSelected: { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' },
+  commonCode: { fontSize: 11, fontWeight: '700', color: '#666' },
+  commonCodeSelected: { color: '#2E7D32' },
+  currItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13 },
+  currItemSelected: { backgroundColor: '#F1F8E9' },
+  currName: { fontSize: 14, color: '#1A1A1A', fontWeight: '500' },
+  currCode: { fontSize: 12, color: '#888', marginTop: 1 },
+  currCheck: { fontSize: 16, color: '#4CAF50' },
+  closeBtn: { margin: 16, backgroundColor: '#F5F5F5', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  closeBtnText: { fontSize: 15, fontWeight: '600', color: '#666' },
 });
 
-// ─── Budget Edit Modal ─────────────────────────────────────────────────────────
 function BudgetModal({ visible, value, onSave, onClose }: {
   visible: boolean; value: string; onSave: (v: string) => void; onClose: () => void;
 }) {
@@ -334,23 +223,31 @@ function BudgetModal({ visible, value, onSave, onClose }: {
       <View style={bmStyles.overlay}>
         <View style={bmStyles.box}>
           <Text style={bmStyles.title}>🏦 Budget</Text>
-          <TextInput
-            style={bmStyles.input}
-            value={text}
-            onChangeText={setText}
-            keyboardType="numeric"
-            autoFocus
-            selectTextOnFocus
-            placeholder="e.g. 2000"
-            placeholderTextColor="#C0C0C0"
-          />
+          <TextInput style={bmStyles.input} value={text} onChangeText={setText} keyboardType="numeric" autoFocus selectTextOnFocus placeholder="e.g. 2000" placeholderTextColor="#C0C0C0" />
           <View style={bmStyles.btnRow}>
-            <TouchableOpacity style={bmStyles.cancelBtn} onPress={onClose}>
-              <Text style={bmStyles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={bmStyles.saveBtn} onPress={() => { onSave(text); onClose(); }}>
-              <Text style={bmStyles.saveText}>Save</Text>
-            </TouchableOpacity>
+            <TouchableOpacity style={bmStyles.cancelBtn} onPress={onClose}><Text style={bmStyles.cancelText}>Cancel</Text></TouchableOpacity>
+            <TouchableOpacity style={bmStyles.saveBtn} onPress={() => { onSave(text); onClose(); }}><Text style={bmStyles.saveText}>Save</Text></TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function TripNameModal({ visible, value, onSave, onClose }: {
+  visible: boolean; value: string; onSave: (v: string) => void; onClose: () => void;
+}) {
+  const [text, setText] = useState(value);
+  useEffect(() => { setText(value); }, [value, visible]);
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={bmStyles.overlay}>
+        <View style={bmStyles.box}>
+          <Text style={bmStyles.title}>✏️ Trip Name</Text>
+          <TextInput style={[bmStyles.input, { fontSize: 16, textAlign: 'left' }]} value={text} onChangeText={setText} autoFocus selectTextOnFocus placeholder="e.g. Thailand 2026" placeholderTextColor="#C0C0C0" />
+          <View style={bmStyles.btnRow}>
+            <TouchableOpacity style={bmStyles.cancelBtn} onPress={onClose}><Text style={bmStyles.cancelText}>Cancel</Text></TouchableOpacity>
+            <TouchableOpacity style={bmStyles.saveBtn} onPress={() => { onSave(text); onClose(); }}><Text style={bmStyles.saveText}>Save</Text></TouchableOpacity>
           </View>
         </View>
       </View>
@@ -370,45 +267,41 @@ const bmStyles = StyleSheet.create({
   saveText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 });
 
-// ─── Trip Name Modal ───────────────────────────────────────────────────────────
-function TripNameModal({ visible, value, onSave, onClose }: {
-  visible: boolean; value: string; onSave: (v: string) => void; onClose: () => void;
-}) {
-  const [text, setText] = useState(value);
-  useEffect(() => { setText(value); }, [value, visible]);
+function InviteModal({ visible, tripCode, onClose }: { visible: boolean; tripCode: string; onClose: () => void }) {
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <View style={bmStyles.overlay}>
-        <View style={bmStyles.box}>
-          <Text style={bmStyles.title}>✏️ Trip Name</Text>
-          <TextInput
-            style={[bmStyles.input, { fontSize: 16, textAlign: 'left' }]}
-            value={text}
-            onChangeText={setText}
-            autoFocus
-            selectTextOnFocus
-            placeholder="e.g. Java → Bali → Lombok"
-            placeholderTextColor="#C0C0C0"
-          />
-          <View style={bmStyles.btnRow}>
-            <TouchableOpacity style={bmStyles.cancelBtn} onPress={onClose}>
-              <Text style={bmStyles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={bmStyles.saveBtn} onPress={() => { onSave(text); onClose(); }}>
-              <Text style={bmStyles.saveText}>Save</Text>
-            </TouchableOpacity>
-          </View>
+      <View style={invStyles.overlay}>
+        <View style={invStyles.box}>
+          <Text style={invStyles.title}>🔗 Invite to Travel Group</Text>
+          <Text style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>Share this code with your travel companions:</Text>
+          <View style={invStyles.codeBox}><Text style={invStyles.code}>{tripCode}</Text></View>
+          <TouchableOpacity style={invStyles.shareBtn} onPress={() => Share.share({ message: `Join my trip on Ultimate Travel Buddy! Use code: ${tripCode}` })}>
+            <Text style={invStyles.shareBtnText}>📤 Share Code</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={invStyles.cancelBtn} onPress={onClose}><Text style={invStyles.cancelText}>Close</Text></TouchableOpacity>
         </View>
       </View>
     </Modal>
   );
 }
 
-// ─── Main Screen ───────────────────────────────────────────────────────────────
+const invStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 32 },
+  box: { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%' },
+  title: { fontSize: 16, fontWeight: '700', color: '#1A1A1A', marginBottom: 8 },
+  codeBox: { backgroundColor: '#E8F5E9', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 16 },
+  code: { fontSize: 32, fontWeight: '900', color: '#2E7D32', letterSpacing: 6 },
+  shareBtn: { backgroundColor: '#4CAF50', borderRadius: 12, paddingVertical: 13, alignItems: 'center', marginBottom: 8 },
+  shareBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  cancelBtn: { backgroundColor: '#F5F5F5', borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+  cancelText: { fontSize: 14, fontWeight: '600', color: '#666' },
+});
+
 export default function TripSettingsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const tripId = route.params?.tripId;
+  const statusBarHeight = useStatusBarHeight();
 
   const [trip, setTrip] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
@@ -423,11 +316,6 @@ export default function TripSettingsScreen() {
   const [showCurrency, setShowCurrency] = useState(false);
   const [showBudget, setShowBudget] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
-
-  const [notifFlight, setNotifFlight] = useState(true);
-  const [notifCheckin, setNotifCheckin] = useState(true);
-  const [notifBudget, setNotifBudget] = useState(true);
-  const [notifPartner, setNotifPartner] = useState(true);
 
   useFocusEffect(useCallback(() => { loadData(); }, []));
 
@@ -456,7 +344,7 @@ export default function TripSettingsScreen() {
 
   async function handleRemoveMember(userId: string) {
     if (userId === currentUserId) { Alert.alert('Error', 'You cannot remove yourself.'); return; }
-    Alert.alert('Remove traveler', 'Remove this person from the trip?', [
+    Alert.alert('Remove member', 'Remove this person from the trip?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: async () => {
         await supabase.from('trip_members').delete().eq('trip_id', tripId).eq('user_id', userId);
@@ -521,13 +409,24 @@ export default function TripSettingsScreen() {
   }
 
   function getInviteCode() {
-    if (trip?.invite_code) return trip.invite_code;
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
+    return trip?.invite_code ?? Math.random().toString(36).substring(2, 8).toUpperCase();
   }
+
+  // Trip summary stats
+  const tripDays = trip?.start_date && trip?.end_date
+    ? Math.round((new Date(trip.end_date).getTime() - new Date(trip.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1
+    : null;
 
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={[]}>
+        <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.backIcon}>‹</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>Trip Settings</Text>
+          <View style={{ width: 40 }} />
+        </View>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color="#4CAF50" />
         </View>
@@ -537,7 +436,7 @@ export default function TripSettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>
@@ -555,6 +454,24 @@ export default function TripSettingsScreen() {
       ) : (
         <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
 
+          {/* Trip Summary Card */}
+          {trip && (
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryName}>{trip.name}</Text>
+              <View style={styles.summaryRow}>
+                {tripDays && <Text style={styles.summaryItem}>📅 {tripDays} days</Text>}
+                {members.length > 0 && <Text style={styles.summaryItem}>👥 {members.length} {members.length === 1 ? 'traveler' : 'travelers'}</Text>}
+                {trip.currency && <Text style={styles.summaryItem}>💱 {trip.currency}</Text>}
+              </View>
+              {trip.budget && (
+                <Text style={styles.summaryBudget}>
+                  Budget: {CURRENCY_FLAGS[trip.currency] ?? ''} {trip.currency} {Number(trip.budget).toLocaleString()}
+                </Text>
+              )}
+            </View>
+          )}
+
+          {/* TRIP DETAILS */}
           <SectionBlock title="TRIP DETAILS" headerColor="#FFE082" textColor="#E65100" icon="✏️">
             <SettingsRow icon="✏️" label="Trip name" value={trip?.name ?? '—'} tappable onPress={() => setShowNameModal(true)} />
             <View style={styles.divider} />
@@ -563,7 +480,7 @@ export default function TripSettingsScreen() {
             <SettingsRow icon="📅" label="End date" value={formatDate(trip?.end_date)} tappable onPress={() => setShowEndDate(true)} />
             <View style={styles.divider} />
             <SettingsRow
-              icon="💶" label="Currency"
+              icon="💱" label="Currency"
               value={`${CURRENCY_FLAGS[trip?.currency] ?? '💱'} ${trip?.currency ?? 'EUR'}`}
               tappable onPress={() => setShowCurrency(true)}
             />
@@ -575,7 +492,8 @@ export default function TripSettingsScreen() {
             />
           </SectionBlock>
 
-          <SectionBlock title="TRAVELERS" headerColor="#B39DDB" textColor="#311B92" icon="👥">
+          {/* TRAVEL GROUP */}
+          <SectionBlock title="TRAVEL GROUP" headerColor="#B39DDB" textColor="#311B92" icon="👥">
             {members.map((m, index) => {
               const profile = m.profiles;
               const isOwner = m.role === 'owner' || m.user_id === currentUserId;
@@ -588,7 +506,7 @@ export default function TripSettingsScreen() {
                     </View>
                     <View style={styles.travelerInfo}>
                       <Text style={styles.travelerName}>{name}</Text>
-                      <Text style={styles.travelerRole}>{isOwner ? 'Trip owner' : 'Co-traveler'}</Text>
+                      <Text style={styles.travelerRole}>{isOwner ? 'Trip owner' : 'Editor'}</Text>
                     </View>
                     {isOwner ? (
                       <View style={styles.ownerBadge}><Text style={styles.ownerBadgeText}>OWNER</Text></View>
@@ -608,31 +526,23 @@ export default function TripSettingsScreen() {
             <View style={styles.divider} />
             <TouchableOpacity style={styles.addTravelerRow} onPress={() => setShowInvite(true)}>
               <View style={styles.addIcon}><Text style={{ fontSize: 20, color: '#4CAF50' }}>＋</Text></View>
-              <Text style={styles.addTravelerText}>Invite traveler</Text>
+              <Text style={styles.addTravelerText}>Invite to travel group</Text>
             </TouchableOpacity>
           </SectionBlock>
 
-          <SectionBlock title="NOTIFICATIONS" headerColor="#90CAF9" textColor="#0D47A1" icon="🔔">
-            <NotifRow icon="✈️" label="Flight reminders" value={notifFlight} onToggle={setNotifFlight} />
-            <View style={styles.divider} />
-            <NotifRow icon="🏨" label="Check-in reminders" value={notifCheckin} onToggle={setNotifCheckin} />
-            <View style={styles.divider} />
-            <NotifRow icon="💰" label="Budget alerts" value={notifBudget} onToggle={setNotifBudget} />
-            <View style={styles.divider} />
-            <NotifRow icon="👥" label="Partner activity" value={notifPartner} onToggle={setNotifPartner} />
-          </SectionBlock>
-
+          {/* ACTIONS */}
           <SectionBlock title="ACTIONS" headerColor="#A5D6A7" textColor="#1B5E20" icon="⚙️">
             <SettingsRow icon="🔗" label="Share invite code" tappable onPress={() => setShowInvite(true)} />
             <View style={styles.divider} />
             <SettingsRow icon="📤" label="Share trip info" tappable onPress={() => {
               if (!trip) return;
-              Share.share({ message: `✈️ ${trip.name}\n📅 ${formatDate(trip.start_date)} – ${formatDate(trip.end_date)}\n💶 Budget: ${trip.currency ?? '€'} ${trip.budget ?? 0}\n\nPlanned with Ultimate Travel Buddy` });
+              Share.share({ message: `✈️ ${trip.name}\n📅 ${formatDate(trip.start_date)} – ${formatDate(trip.end_date)}\n💱 Budget: ${trip.currency ?? '€'} ${trip.budget ?? 0}\n\nPlanned with Ultimate Travel Buddy` });
             }} />
             <View style={styles.divider} />
             <SettingsRow icon="📋" label="Duplicate trip" tappable onPress={handleDuplicateTrip} />
           </SectionBlock>
 
+          {/* DELETE */}
           <TouchableOpacity style={styles.deleteCard} onPress={handleDeleteTrip}>
             <Text style={{ fontSize: 20 }}>🗑️</Text>
             <View style={styles.deleteInfo}>
@@ -676,25 +586,18 @@ function SettingsRow({ icon, label, value, tappable, onPress }: {
   );
 }
 
-function NotifRow({ icon, label, value, onToggle }: {
-  icon: string; label: string; value: boolean; onToggle: (v: boolean) => void;
-}) {
-  return (
-    <View style={styles.settingsRow}>
-      <Text style={styles.settingsIcon}>{icon}</Text>
-      <Text style={[styles.settingsLabel, { flex: 1 }]}>{label}</Text>
-      <Switch value={value} onValueChange={onToggle} trackColor={{ false: '#E0E0E0', true: '#A5D6A7' }} thumbColor={value ? '#4CAF50' : '#f4f3f4'} />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#E8E8E8' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  safe: { flex: 1, backgroundColor: '#F0F0F0' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   backBtn: { padding: 4 },
   backIcon: { fontSize: 28, color: '#1A1A1A', fontWeight: '300' },
   title: { fontSize: 18, fontWeight: '700', color: '#1A1A1A' },
-  scroll: { flex: 1, padding: 16 },
+  scroll: { flex: 1 },
+  summaryCard: { margin: 16, marginBottom: 8, backgroundColor: '#1A1A2E', borderRadius: 16, padding: 18 },
+  summaryName: { fontSize: 20, fontWeight: '900', color: '#fff', marginBottom: 10 },
+  summaryRow: { flexDirection: 'row', gap: 12, marginBottom: 8, flexWrap: 'wrap' },
+  summaryItem: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '500' },
+  summaryBudget: { fontSize: 13, color: '#4CAF50', fontWeight: '600' },
   divider: { height: 1, backgroundColor: '#F5F5F5' },
   settingsRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
   settingsIcon: { fontSize: 20, width: 28, textAlign: 'center' },
@@ -714,7 +617,7 @@ const styles = StyleSheet.create({
   addTravelerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   addIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#E8F5E9', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#A5D6A7', borderStyle: 'dashed' },
   addTravelerText: { fontSize: 14, fontWeight: '600', color: '#4CAF50' },
-  deleteCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FFF5F5', borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1.5, borderColor: '#FFCDD2' },
+  deleteCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FFF5F5', borderRadius: 16, padding: 16, margin: 16, marginTop: 8, borderWidth: 1.5, borderColor: '#FFCDD2' },
   deleteInfo: { flex: 1 },
   deleteTitle: { fontSize: 15, fontWeight: '700', color: '#F44336' },
   deleteSubtitle: { fontSize: 12, color: '#888', marginTop: 2 },

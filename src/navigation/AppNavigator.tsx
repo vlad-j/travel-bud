@@ -3,7 +3,6 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { View, StyleSheet, Image, TouchableOpacity, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
 import HomeScreen from '../screens/HomeScreen';
 import ItineraryScreen from '../screens/ItineraryScreen';
 import BudgetScreen from '../screens/BudgetScreen';
@@ -29,6 +28,7 @@ import CreateTripScreen from '../screens/CreateTripScreen';
 import PartnerSyncScreen from '../screens/PartnerSyncScreen';
 import NotificationCenterScreen from '../screens/NotificationCenterScreen';
 import MyTripsScreen from '../screens/MyTripsScreen';
+import JoinTripScreen from '../screens/JoinTripScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -92,6 +92,7 @@ function HomeStack() {
       <Stack.Screen name="CurrencySelector" component={CurrencySelectorScreen} />
       <Stack.Screen name="LanguageSelector" component={LanguageSelectorScreen} />
       <Stack.Screen name="CreateTrip" component={CreateTripScreen} />
+      <Stack.Screen name="JoinTrip" component={JoinTripScreen} options={{ headerShown: false }} />
       <Stack.Screen name="PartnerSync" component={PartnerSyncScreen} />
       <Stack.Screen name="Notifications" component={NotificationCenterScreen} />
       <Stack.Screen name="MyTrips" component={MyTripsScreen} />

@@ -467,7 +467,7 @@ export default function HomeScreen() {
         )}
 
         {/* ─── Quick Pills ──────────────────────────────────────────── */}
-        <View style={[styles.gridWrap, { marginTop: -(statusBarHeight +1) }]}>
+        <View style={[styles.gridWrap, { marginTop: -(statusBarHeight + 30) }]}>
           {QUICK_PILLS.map((pill) => (
             <TouchableOpacity
               key={pill.label}
