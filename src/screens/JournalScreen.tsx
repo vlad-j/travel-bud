@@ -1,97 +1,288 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Image,
-  ActivityIndicator,
-  Alert,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
+  ActivityIndicator, Alert, Modal, Pressable, KeyboardAvoidingView,
+  Platform, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import BottomSheet, { SheetButton, MenuSheet } from '../components/BottomSheet';
-import { Sparkle, Cloud, Dot, TravelStamp } from '../components/TravelDecorations';
+import { Sparkle, Dot } from '../components/TravelDecorations';
 import { supabase } from '../lib/supabase';
 import { searchLocations } from '../lib/locationService';
+import { currentTripIdRef } from '../context/TripContext';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 
-const FILTER_TABS = ['All', 'Notes', 'Photos', 'Places'];
+// ─── Constants ────────────────────────────────────────────────────────────────
+const MOODS = [
+  { value: 'amazing', emoji: '😍', label: 'Amazing', desc: 'An unforgettable day!' },
+  { value: 'good', emoji: '😊', label: 'Good', desc: 'A lovely day overall.' },
+  { value: 'normal', emoji: '😐', label: 'Normal', desc: 'Just a regular day.' },
+  { value: 'bad', emoji: '😞', label: 'Bad', desc: 'Not the best day...' },
+];
 
-export default function JournalScreen() {
-  const [activeFilter, setActiveFilter] = useState('All');
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchText, setSearchText] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
+const FILTER_TABS = ['All', 'Entries', 'Places', 'AI Stories'];
+
+function localDateStr(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function getTodayStr(): string {
+  const now = new Date();
+  return localDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+}
+
+function getYesterdayStr(): string {
+  const now = new Date();
+  return localDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+}
+
+function formatDateLabel(dateStr: string): string {
+  const today = getTodayStr();
+  const yesterday = getYesterdayStr();
+  if (dateStr === today) return 'Today';
+  if (dateStr === yesterday) return 'Yesterday';
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  } catch { return dateStr; }
+}
+
+function formatTime(dateStr: string): string {
+  try {
+    return new Date(dateStr).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  } catch { return ''; }
+}
+
+async function uploadPhoto(uri: string, userId: string): Promise<string | null> {
+  try {
+    const ext = uri.split('.').pop() ?? 'jpg';
+    const fileName = `${userId}/${Date.now()}.${ext}`;
+    const response = await fetch(uri);
+    const arrayBuffer = await response.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    const { error } = await supabase.storage
+      .from('journal-photos')
+      .upload(fileName, uint8Array, { contentType: `image/${ext}`, upsert: false });
+    if (error) { console.log('Upload error:', error); return null; }
+    const { data: urlData } = supabase.storage.from('journal-photos').getPublicUrl(fileName);
+    return urlData.publicUrl;
+  } catch (e) { console.log('Upload exception:', e); return null; }
+}
+
+// ─── Mood Timeline ────────────────────────────────────────────────────────────
+function MoodTimeline({ entries }: { entries: any[] }) {
+  const moodEntries = entries.filter(e => e.mood && e.date).slice(0, 14).reverse();
+  if (moodEntries.length === 0) return null;
+
+  return (
+    <View style={mt.wrap}>
+      <Text style={mt.title}>🎭 MOOD TIMELINE</Text>
+      <View style={mt.card}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={mt.scroll}>
+          {moodEntries.map(entry => {
+            const moodData = MOODS.find(m => m.value === entry.mood);
+            const dateStr = entry.date?.split('T')[0] ?? '';
+            const parts = dateStr.split('-');
+            const d = parts[2] ?? '';
+            const monthNum = parseInt(parts[1] ?? '1') - 1;
+            const isToday = dateStr === getTodayStr();
+            const monthLabel = new Date(2000, monthNum, 1).toLocaleDateString('en-GB', { month: 'short' });
+            return (
+              <View key={entry.id} style={mt.item}>
+                <View style={[mt.emojiWrap, isToday && mt.emojiWrapToday]}>
+                  <Text style={{ fontSize: 22 }}>{moodData?.emoji ?? '😐'}</Text>
+                </View>
+                <Text style={[mt.itemDay, isToday && { color: '#4CAF50', fontWeight: '800' }]}>{parseInt(d)}</Text>
+                <Text style={mt.itemMonth}>{monthLabel}</Text>
+              </View>
+            );
+          })}
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+const mt = StyleSheet.create({
+  wrap: { marginHorizontal: 16, marginBottom: 8 },
+  title: { fontSize: 11, fontWeight: '700', color: '#888', letterSpacing: 0.8, marginBottom: 10 },
+  card: { backgroundColor: '#fff', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 8, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
+  scroll: { gap: 8, paddingHorizontal: 8 },
+  item: { alignItems: 'center', gap: 4, width: 44 },
+  emojiWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center' },
+  emojiWrapToday: { backgroundColor: '#E8F5E9', borderWidth: 2, borderColor: '#4CAF50' },
+  itemDay: { fontSize: 12, color: '#555', fontWeight: '700' },
+  itemMonth: { fontSize: 9, color: '#BBB', fontWeight: '600' },
+});
+
+// ─── Journal Card ─────────────────────────────────────────────────────────────
+function JournalCard({ entry, onEdit, onDelete }: { entry: any; onEdit: () => void; onDelete: () => void }) {
+  const time = entry.date ? formatTime(entry.date) : '';
+  const moodData = MOODS.find(m => m.value === entry.mood);
+  const coverPhoto = Array.isArray(entry.photos) ? entry.photos[0] : null;
   const [menuVisible, setMenuVisible] = useState(false);
-  const [entries, setEntries] = useState<any[]>([]);
-  const [trips, setTrips] = useState<any[]>([]);
-  const [activities, setActivities] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
-  // Form state
-  const [newTitle, setNewTitle] = useState('');
-  const [newText, setNewText] = useState('');
-  const [newLocation, setNewLocation] = useState('');
+  return (
+    <TouchableOpacity style={jc.card} activeOpacity={0.88} onLongPress={() => setMenuVisible(true)}>
+      {coverPhoto ? (
+        <Image source={{ uri: coverPhoto }} style={jc.coverPhoto} resizeMode="cover" />
+      ) : null}
+
+      <View style={jc.cardBody}>
+        <View style={jc.topRow}>
+          <View style={jc.titleWrap}>
+            {moodData ? <Text style={{ fontSize: 18, marginRight: 6 }}>{moodData.emoji}</Text> : null}
+            <Text style={jc.cardTitle} numberOfLines={1}>{entry.title}</Text>
+          </View>
+          <Text style={jc.cardTime}>{time}</Text>
+        </View>
+
+        {entry.location ? (
+          <Text style={jc.cardLocation}>📍 {entry.location}</Text>
+        ) : null}
+
+        {entry.highlight ? (
+          <View style={jc.highlightWrap}>
+            <Text style={jc.highlightIcon}>✨</Text>
+            <Text style={jc.highlightText} numberOfLines={2}>{entry.highlight}</Text>
+          </View>
+        ) : null}
+
+        {entry.content ? (
+          <Text style={jc.contentPreview} numberOfLines={2}>{entry.content}</Text>
+        ) : null}
+
+        <View style={jc.footer}>
+          {entry.favorite_meal ? (
+            <View style={jc.footerTag}>
+              <Text style={{ fontSize: 11 }}>🍜</Text>
+              <Text style={jc.footerTagText} numberOfLines={1}>{entry.favorite_meal}</Text>
+            </View>
+          ) : null}
+          {entry.trips?.name ? (
+            <View style={jc.tripTag}>
+              <Text style={{ fontSize: 10 }}>✈️</Text>
+              <Text style={jc.tripTagText} numberOfLines={1}>{entry.trips.name}</Text>
+            </View>
+          ) : null}
+          {Array.isArray(entry.photos) && entry.photos.length > 0 ? (
+            <View style={jc.photoTag}>
+              <Text style={{ fontSize: 10 }}>📷</Text>
+              <Text style={jc.photoTagText}>{entry.photos.length}</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+
+      <Modal visible={menuVisible} transparent animationType="fade">
+        <Pressable style={jc.menuOverlay} onPress={() => setMenuVisible(false)}>
+          <View style={jc.menuSheet}>
+            <TouchableOpacity style={jc.menuItem} onPress={() => { setMenuVisible(false); onEdit(); }}>
+              <Text style={{ fontSize: 18 }}>✏️</Text>
+              <Text style={jc.menuItemText}>Edit entry</Text>
+            </TouchableOpacity>
+            <View style={jc.menuDivider} />
+            <TouchableOpacity style={jc.menuItem} onPress={() => { setMenuVisible(false); onDelete(); }}>
+              <Text style={{ fontSize: 18 }}>🗑️</Text>
+              <Text style={[jc.menuItemText, { color: '#F44336' }]}>Delete entry</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
+    </TouchableOpacity>
+  );
+}
+
+const jc = StyleSheet.create({
+  card: { backgroundColor: '#fff', borderRadius: 16, marginBottom: 10, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  coverPhoto: { width: '100%', height: 140 },
+  cardBody: { padding: 14 },
+  topRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4 },
+  titleWrap: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
+  cardTitle: { fontSize: 15, fontWeight: '800', color: '#1A1A1A', flex: 1 },
+  cardTime: { fontSize: 11, color: '#BBB', flexShrink: 0 },
+  cardLocation: { fontSize: 12, color: '#888', marginBottom: 8 },
+  highlightWrap: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#FFFBEB', borderRadius: 10, padding: 10, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#F59E0B' },
+  highlightIcon: { fontSize: 14, marginTop: 1 },
+  highlightText: { fontSize: 13, color: '#78350F', fontWeight: '500', flex: 1, lineHeight: 18 },
+  contentPreview: { fontSize: 13, color: '#666', lineHeight: 19, marginBottom: 8 },
+  footer: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  footerTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FFF8E1', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  footerTagText: { fontSize: 11, color: '#E65100', fontWeight: '600', maxWidth: 100 },
+  tripTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#E8F5E9', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  tripTagText: { fontSize: 11, color: '#2E7D32', fontWeight: '600', maxWidth: 100 },
+  photoTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#E3F2FD', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  photoTagText: { fontSize: 11, color: '#1565C0', fontWeight: '600' },
+  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
+  menuSheet: { backgroundColor: '#fff', borderRadius: 16, width: 240, overflow: 'hidden' },
+  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
+  menuItemText: { fontSize: 15, fontWeight: '600', color: '#1A1A1A' },
+  menuDivider: { height: 1, backgroundColor: '#F0F0F0' },
+});
+
+// ─── Entry Modal ──────────────────────────────────────────────────────────────
+function EntryModal({ visible, onClose, trips, activities, todayExpenses, editEntry, onSaved }: {
+  visible: boolean;
+  onClose: () => void;
+  trips: any[];
+  activities: any[];
+  todayExpenses: any[];
+  editEntry: any | null;
+  onSaved: () => void;
+}) {
+  const isEdit = !!editEntry;
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [mood, setMood] = useState('');
+  const [highlight, setHighlight] = useState('');
+  const [favoriteMeal, setFavoriteMeal] = useState('');
+  const [location, setLocation] = useState('');
   const [locationSuggestions, setLocationSuggestions] = useState<string[]>([]);
-  const [newLinkedActivity, setNewLinkedActivity] = useState('');
-  const [selectedTrip, setSelectedTrip] = useState('');
+  const [linkedActivities, setLinkedActivities] = useState<string[]>([]);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const currentTrip = trips.find(t => t.id === currentTripIdRef.current) ?? trips[0];
 
-  async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    // Load all user trips
-    const { data: memberships } = await supabase
-      .from('trip_members')
-      .select('trip_id')
-      .eq('user_id', user.id);
-
-    if (!memberships || memberships.length === 0) { setLoading(false); return; }
-    const tripIds = memberships.map((m: any) => m.trip_id);
-
-    const { data: tripsData } = await supabase
-      .from('trips')
-      .select('id, name, status')
-      .in('id', tripIds)
-      .order('start_date', { ascending: false });
-
-    setTrips(tripsData ?? []);
-
-    const activeTrip = tripsData?.find((t: any) => t.status === 'active');
-    if (activeTrip) {
-      setSelectedTrip(activeTrip.id);
-
-      // Load activities for active trip
-      const { data: actsData } = await supabase
-        .from('activities')
-        .select('id, title, date')
-        .eq('trip_id', activeTrip.id)
-        .order('date', { ascending: false })
-        .limit(20);
-      setActivities(actsData ?? []);
+  React.useEffect(() => {
+    if (visible) {
+      if (editEntry) {
+        setTitle(editEntry.title ?? '');
+        setContent(editEntry.content ?? '');
+        setMood(editEntry.mood ?? '');
+        setHighlight(editEntry.highlight ?? '');
+        setFavoriteMeal(editEntry.favorite_meal ?? '');
+        setLocation(editEntry.location ?? '');
+        setPhotos(Array.isArray(editEntry.photos) ? editEntry.photos : []);
+        setLinkedActivities(editEntry.activity_id ? [editEntry.activity_id] : []);
+      } else {
+        setTitle(''); setContent(''); setMood(''); setHighlight('');
+        setFavoriteMeal(''); setLocation(''); setPhotos([]); setLinkedActivities([]);
+      }
+      setLocationSuggestions([]);
     }
+  }, [visible, editEntry]);
 
-    // Load all journal entries
-    const { data: entriesData } = await supabase
-      .from('journal_entries')
-      .select(`*, trips(name)`)
-      .in('trip_id', tripIds)
-      .order('date', { ascending: false });
-
-    setEntries(entriesData ?? []);
-    setLoading(false);
+  async function handlePickPhotos() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow access to your photo library.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      const uris = result.assets.map(a => a.uri);
+      setPhotos(prev => [...prev, ...uris].slice(0, 6));
+    }
   }
 
   async function handleLocationChange(text: string) {
-    setNewLocation(text);
+    setLocation(text);
     if (text.length >= 3) {
       const results = await searchLocations(text);
       setLocationSuggestions(results);
@@ -100,96 +291,410 @@ export default function JournalScreen() {
     }
   }
 
-  async function handlePickPhotos() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow access to your photo library.');
-      return;
-    }
+  function toggleActivity(actId: string) {
+    setLinkedActivities(prev =>
+      prev.includes(actId) ? prev.filter(id => id !== actId) : [...prev, actId]
+    );
+  }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      quality: 0.8,
-    });
+  async function handleGenerateSummary() {
+    setGenerating(true);
+    try {
+      const moodLabel = MOODS.find(m => m.value === mood)?.label ?? '';
+      const todayActs = activities.filter(a => a.date === getTodayStr());
+      const context = [
+        currentTrip ? `Trip: ${currentTrip.name}` : '',
+        moodLabel ? `Mood: ${moodLabel}` : '',
+        highlight ? `Best moment: ${highlight}` : '',
+        favoriteMeal ? `Favorite meal: ${favoriteMeal}` : '',
+        location ? `Location: ${location}` : '',
+        todayActs.length > 0 ? `Activities: ${todayActs.map(a => a.title).join(', ')}` : '',
+        todayExpenses.length > 0 ? `Spent: ${todayExpenses.map(e => `${e.title} (€${e.amount})`).join(', ')}` : '',
+      ].filter(Boolean).join('\n');
 
-    if (!result.canceled) {
-      const uris = result.assets.map((a) => a.uri);
-      setPhotos((prev) => [...prev, ...uris].slice(0, 5));
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: `Write a warm, personal travel diary entry based on:\n\n${context}\n\nWrite 2-3 paragraphs in first person, past tense. Make it vivid and emotional. Under 200 words.`,
+          }],
+        }),
+      });
+      const data = await response.json();
+      const text = data.content?.[0]?.text ?? '';
+      if (text) setContent(text);
+      else Alert.alert('Error', 'Could not generate summary.');
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not generate summary.');
     }
+    setGenerating(false);
   }
 
   async function handleSave() {
-    if (!newTitle.trim()) return;
+    if (!title.trim()) return;
     setSaving(true);
-
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const tripId = selectedTrip || trips[0]?.id;
+    if (!user) { setSaving(false); return; }
+    const tripId = currentTripIdRef.current ?? trips[0]?.id;
     if (!tripId) { setSaving(false); return; }
 
-    const linkedActivity = activities.find((a) => a.id === newLinkedActivity);
-
-    const { data, error } = await supabase
-      .from('journal_entries')
-      .insert({
-        trip_id: tripId,
-        activity_id: newLinkedActivity || null,
-        title: newTitle.trim(),
-        content: newText,
-        date: new Date().toISOString(),
-        created_by: user.id,
-      })
-      .select(`*, trips(name)`)
-      .single();
-
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      setEntries((prev) => [{ ...data, location: newLocation, photos }, ...prev]);
-      setNewTitle(''); setNewText(''); setNewLocation('');
-      setNewLinkedActivity(''); setPhotos([]);
-      setShowAddModal(false);
+    setUploadingPhotos(true);
+    const uploadedUrls: string[] = [];
+    for (const uri of photos) {
+      if (uri.startsWith('http')) {
+        uploadedUrls.push(uri);
+      } else {
+        const url = await uploadPhoto(uri, user.id);
+        if (url) uploadedUrls.push(url);
+      }
     }
+    setUploadingPhotos(false);
+
+    const payload = {
+      trip_id: tripId,
+      activity_id: linkedActivities[0] || null,
+      title: title.trim(),
+      content,
+      mood,
+      highlight,
+      favorite_meal: favoriteMeal,
+      location,
+      photos: uploadedUrls,
+    };
+
+    let error: any = null;
+    if (isEdit) {
+      const res = await supabase.from('journal_entries').update(payload).eq('id', editEntry.id);
+      error = res.error;
+    } else {
+      const res = await supabase.from('journal_entries').insert({ ...payload, date: new Date().toISOString(), created_by: user.id });
+      error = res.error;
+    }
+
+    if (error) { Alert.alert('Error', error.message); }
+    else { onSaved(); onClose(); }
     setSaving(false);
   }
 
-  // Group entries by date
-  const today = new Date().toISOString().split('T')[0];
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const todayActs = activities.filter(a => a.date === getTodayStr());
+  const totalTodaySpent = todayExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
-  const filtered = entries.filter((e) => {
-    if (activeFilter === 'Photos') return e.photos?.length > 0;
-    if (activeFilter === 'Notes') return e.content?.length > 0;
-    return true;
-  }).filter((e) =>
-    searchText
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={em.overlay}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={em.kvWrapper}>
+          <View style={em.sheet}>
+            <View style={em.header}>
+              <TouchableOpacity onPress={onClose}><Text style={em.cancel}>Cancel</Text></TouchableOpacity>
+              <Text style={em.headerTitle}>{isEdit ? 'Edit Entry' : 'New Journal Entry'}</Text>
+              <View style={{ width: 60 }} />
+            </View>
+
+            {currentTrip && (
+              <View style={em.contextBar}>
+                <Text style={em.contextTrip}>{currentTrip.name}</Text>
+                <Text style={em.contextDate}>{formatDateLabel(getTodayStr())}</Text>
+              </View>
+            )}
+
+            <ScrollView style={em.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
+              <Text style={em.fieldLabel}>📷 Photos</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={em.photoScroll}>
+                <TouchableOpacity style={em.addPhotoBtn} onPress={handlePickPhotos}>
+                  <Text style={{ fontSize: 24 }}>📷</Text>
+                  <Text style={em.addPhotoText}>Add</Text>
+                </TouchableOpacity>
+                {photos.map((uri, i) => (
+                  <View key={i} style={em.photoWrap}>
+                    <Image source={{ uri }} style={em.photo} resizeMode="cover" />
+                    <TouchableOpacity style={em.photoRemove} onPress={() => setPhotos(prev => prev.filter((_, idx) => idx !== i))}>
+                      <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>✕</Text>
+                    </TouchableOpacity>
+                    {i === 0 && <View style={em.coverBadge}><Text style={em.coverBadgeText}>Cover</Text></View>}
+                  </View>
+                ))}
+              </ScrollView>
+
+              <Text style={em.fieldLabel}>How was your day?</Text>
+              <View style={em.moodRow}>
+                {MOODS.map(m => (
+                  <TouchableOpacity
+                    key={m.value}
+                    style={[em.moodBtn, mood === m.value && em.moodBtnActive]}
+                    onPress={() => setMood(mood === m.value ? '' : m.value)}
+                  >
+                    <Text style={{ fontSize: 28 }}>{m.emoji}</Text>
+                    <Text style={[em.moodLabel, mood === m.value && { color: '#4CAF50', fontWeight: '800' }]}>{m.label}</Text>
+                    {mood === m.value && <Text style={em.moodDesc}>{m.desc}</Text>}
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={em.fieldLabel}>Title</Text>
+              <TextInput style={em.input} placeholder="e.g. Sunrise at Wat Arun" placeholderTextColor="#C0C0C0" value={title} onChangeText={setTitle} />
+
+              <Text style={em.fieldLabel}>✨ Best moment <Text style={em.optional}>(optional)</Text></Text>
+              <TextInput style={em.input} placeholder="What was the highlight of your day?" placeholderTextColor="#C0C0C0" value={highlight} onChangeText={setHighlight} />
+
+              <Text style={em.fieldLabel}>🍜 Favorite meal <Text style={em.optional}>(optional)</Text></Text>
+              <TextInput style={em.input} placeholder="e.g. Pad Thai at street market" placeholderTextColor="#C0C0C0" value={favoriteMeal} onChangeText={setFavoriteMeal} />
+
+              <Text style={em.fieldLabel}>📍 Location <Text style={em.optional}>(optional)</Text></Text>
+              <TextInput style={em.input} placeholder="e.g. Bangkok" placeholderTextColor="#C0C0C0" value={location} onChangeText={handleLocationChange} />
+              {locationSuggestions.length > 0 && (
+                <View style={em.suggestions}>
+                  {locationSuggestions.map((s, i) => (
+                    <TouchableOpacity key={i} style={em.suggestionRow} onPress={() => { setLocation(s); setLocationSuggestions([]); }}>
+                      <Text style={{ fontSize: 14 }}>📍</Text>
+                      <Text style={em.suggestionText} numberOfLines={1}>{s}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {todayActs.length > 0 && (
+                <>
+                  <Text style={em.fieldLabel}>🗺 Today's activities</Text>
+                  <View style={em.checklistWrap}>
+                    {todayActs.map(act => {
+                      const checked = linkedActivities.includes(act.id);
+                      return (
+                        <TouchableOpacity key={act.id} style={em.checklistItem} onPress={() => toggleActivity(act.id)}>
+                          <View style={[em.checkbox, checked && em.checkboxChecked]}>
+                            {checked && <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>✓</Text>}
+                          </View>
+                          <Text style={[em.checklistText, checked && { color: '#4CAF50', fontWeight: '600' }]}>{act.title}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+
+              {todayExpenses.length > 0 && (
+                <>
+                  <Text style={em.fieldLabel}>💰 Today's spending</Text>
+                  <View style={em.spendingCard}>
+                    <View style={em.spendingTop}>
+                      <Text style={em.spendingTotal}>€{totalTodaySpent.toFixed(0)}</Text>
+                      <Text style={em.spendingCount}>{todayExpenses.length} expenses</Text>
+                    </View>
+                    {todayExpenses.slice(0, 3).map(e => (
+                      <View key={e.id} style={em.spendingRow}>
+                        <Text style={em.spendingTitle}>{e.title}</Text>
+                        <Text style={em.spendingAmount}>€{Number(e.amount).toFixed(0)}</Text>
+                      </View>
+                    ))}
+                    {todayExpenses.length > 3 && (
+                      <Text style={em.spendingMore}>+{todayExpenses.length - 3} more</Text>
+                    )}
+                  </View>
+                </>
+              )}
+
+              <Text style={em.fieldLabel}>Notes</Text>
+              <TextInput
+                style={[em.input, em.textArea]}
+                placeholder="Write about your day..."
+                placeholderTextColor="#C0C0C0"
+                value={content}
+                onChangeText={setContent}
+                multiline
+                numberOfLines={5}
+              />
+
+              <TouchableOpacity
+                style={[em.generateBtn, generating && { opacity: 0.6 }]}
+                onPress={handleGenerateSummary}
+                disabled={generating}
+              >
+                {generating ? <ActivityIndicator color="#7C3AED" size="small" /> : <Text style={{ fontSize: 16 }}>✨</Text>}
+                <Text style={em.generateText}>{generating ? 'Generating...' : 'Generate AI Summary'}</Text>
+              </TouchableOpacity>
+
+              <View style={{ height: 120 }} />
+            </ScrollView>
+
+            <View style={em.stickyBottom}>
+              <TouchableOpacity
+                style={[em.saveBtn2, (!title.trim() || saving || uploadingPhotos) && em.saveBtnDisabled2]}
+                onPress={handleSave}
+                disabled={!title.trim() || saving || uploadingPhotos}
+              >
+                {saving || uploadingPhotos
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={em.saveText2}>📖 {isEdit ? 'Save Changes' : 'Save Journal Entry'}</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+  );
+}
+
+const em = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  kvWrapper: { flex: 1, justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '95%' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
+  cancel: { fontSize: 15, color: '#888', fontWeight: '500', width: 60 },
+  contextBar: { backgroundColor: '#1A1A2E', paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  contextTrip: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  contextDate: { fontSize: 12, color: 'rgba(255,255,255,0.6)' },
+  scroll: { flex: 1, paddingHorizontal: 16 },
+  fieldLabel: { fontSize: 12, fontWeight: '700', color: '#888', letterSpacing: 0.5, marginBottom: 8, marginTop: 18 },
+  optional: { fontWeight: '400', color: '#BBB' },
+  input: { backgroundColor: '#F5F5F5', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: '#1A1A1A', borderWidth: 1, borderColor: '#EBEBEB' },
+  textArea: { height: 120, textAlignVertical: 'top' },
+  photoScroll: { gap: 10, paddingVertical: 4, paddingRight: 8 },
+  addPhotoBtn: { width: 80, height: 80, borderRadius: 12, backgroundColor: '#F5F5F5', borderWidth: 1.5, borderColor: '#E0E0E0', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  addPhotoText: { fontSize: 11, color: '#888', fontWeight: '600' },
+  photoWrap: { position: 'relative' },
+  photo: { width: 80, height: 80, borderRadius: 12 },
+  photoRemove: { position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: '#F44336', alignItems: 'center', justifyContent: 'center' },
+  coverBadge: { position: 'absolute', bottom: 4, left: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  coverBadgeText: { fontSize: 9, color: '#fff', fontWeight: '700' },
+  moodRow: { flexDirection: 'row', gap: 8 },
+  moodBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 14, backgroundColor: '#F5F5F5', borderWidth: 1.5, borderColor: '#EBEBEB', gap: 4, minHeight: 80 },
+  moodBtnActive: { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' },
+  moodLabel: { fontSize: 10, fontWeight: '600', color: '#888', textAlign: 'center' },
+  moodDesc: { fontSize: 9, color: '#4CAF50', textAlign: 'center', paddingHorizontal: 2 },
+  suggestions: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#F0F0F0', marginTop: 4, elevation: 3 },
+  suggestionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
+  suggestionText: { fontSize: 13, color: '#1A1A1A', flex: 1 },
+  checklistWrap: { backgroundColor: '#F9F9F9', borderRadius: 12, borderWidth: 1, borderColor: '#EBEBEB', overflow: 'hidden' },
+  checklistItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: '#D0D0D0', alignItems: 'center', justifyContent: 'center' },
+  checkboxChecked: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
+  checklistText: { fontSize: 14, color: '#555', flex: 1 },
+  spendingCard: { backgroundColor: '#F0FDF4', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#BBF7D0' },
+  spendingTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  spendingTotal: { fontSize: 22, fontWeight: '900', color: '#15803D' },
+  spendingCount: { fontSize: 12, color: '#888' },
+  spendingRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  spendingTitle: { fontSize: 13, color: '#555', flex: 1 },
+  spendingAmount: { fontSize: 13, fontWeight: '700', color: '#1A1A1A' },
+  spendingMore: { fontSize: 11, color: '#888', marginTop: 4 },
+  generateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 13, marginTop: 10, borderRadius: 12, backgroundColor: '#F3E8FF', borderWidth: 1.5, borderColor: '#C4B5FD' },
+  generateText: { fontSize: 14, fontWeight: '700', color: '#7C3AED' },
+  stickyBottom: { padding: 16, borderTopWidth: 1, borderTopColor: '#F0F0F0', backgroundColor: '#fff' },
+  saveBtn2: { backgroundColor: '#4CAF50', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  saveBtnDisabled2: { backgroundColor: '#C8E6C9' },
+  saveText2: { fontSize: 16, fontWeight: '700', color: '#fff' },
+});
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+export default function JournalScreen() {
+  const [activeFilter, setActiveFilter] = useState('All');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [editEntry, setEditEntry] = useState<any | null>(null);
+  const [entries, setEntries] = useState<any[]>([]);
+  const [trips, setTrips] = useState<any[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
+  const [todayExpenses, setTodayExpenses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const currentTrip = trips.find(t => t.id === currentTripIdRef.current) ?? trips[0];
+  const statusBarHeight = useStatusBarHeight();
+
+  useFocusEffect(useCallback(() => { loadData(); }, []));
+
+  async function loadData() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: memberships } = await supabase.from('trip_members').select('trip_id').eq('user_id', user.id);
+    if (!memberships || memberships.length === 0) { setLoading(false); return; }
+    const tripIds = memberships.map((m: any) => m.trip_id);
+
+    const { data: tripsData } = await supabase.from('trips').select('id, name, status').in('id', tripIds).order('start_date', { ascending: false });
+    setTrips(tripsData ?? []);
+
+    const currentTripId = currentTripIdRef.current ?? tripsData?.find((t: any) => t.status === 'active')?.id;
+
+    if (currentTripId) {
+      const { data: actsData } = await supabase
+        .from('activities').select('id, title, date').eq('trip_id', currentTripId)
+        .order('date', { ascending: false }).limit(30);
+      setActivities(actsData ?? []);
+
+      const today = getTodayStr();
+      const { data: expData } = await supabase
+        .from('expenses').select('id, title, amount, category').eq('trip_id', currentTripId)
+        .gte('date', `${today}T00:00:00`).lte('date', `${today}T23:59:59`);
+      setTodayExpenses(expData ?? []);
+    }
+
+    const { data: entriesData } = await supabase
+      .from('journal_entries').select('*, trips(name)').in('trip_id', tripIds).order('date', { ascending: false });
+    setEntries(entriesData ?? []);
+    setLoading(false);
+  }
+
+  async function handleDelete(entryId: string) {
+    Alert.alert('Delete Entry', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          await supabase.from('journal_entries').delete().eq('id', entryId);
+          setEntries(prev => prev.filter(e => e.id !== entryId));
+        },
+      },
+    ]);
+  }
+
+  function handleEdit(entry: any) { setEditEntry(entry); setShowModal(true); }
+  function handleAdd() { setEditEntry(null); setShowModal(true); }
+
+  const filtered = entries
+    .filter(e => {
+      if (activeFilter === 'Entries') return e.content?.length > 0;
+      if (activeFilter === 'Places') return e.location?.length > 0;
+      if (activeFilter === 'AI Stories') return e.content?.length > 100;
+      return true;
+    })
+    .filter(e => searchText
       ? e.title?.toLowerCase().includes(searchText.toLowerCase()) ||
         e.content?.toLowerCase().includes(searchText.toLowerCase())
       : true
-  );
+    );
 
-  const todayEntries = filtered.filter((e) => e.date?.startsWith(today));
-  const yesterdayEntries = filtered.filter((e) => e.date?.startsWith(yesterday));
-  const olderEntries = filtered.filter((e) => !e.date?.startsWith(today) && !e.date?.startsWith(yesterday));
+  const grouped: Record<string, any[]> = {};
+  for (const entry of filtered) {
+    const dateKey = entry.date?.split('T')[0] ?? 'unknown';
+    if (!grouped[dateKey]) grouped[dateKey] = [];
+    grouped[dateKey].push(entry);
+  }
+  const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Sparkle color="#FF9800" size={14} style={{ position: 'relative', marginRight: 6 }} />
-          <Text style={styles.title}>Journal</Text>
+    <SafeAreaView style={styles.safe} edges={[]}>
+      <View style={[styles.header, { paddingTop: statusBarHeight }]}>
+        <View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Sparkle color="#FF9800" size={14} style={{ position: 'relative' }} />
+            <Text style={styles.title}>Journal</Text>
+          </View>
+          {currentTrip && (
+            <Text style={styles.headerSub}>{currentTrip.name} · {entries.length} entries</Text>
+          )}
         </View>
         <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setSearchOpen((v) => !v)}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => setSearchOpen(v => !v)}>
             <Text style={{ fontSize: 20 }}>🔍</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setShowAddModal(true)}>
-            <Text style={{ fontSize: 22, color: '#4CAF50', fontWeight: '700' }}>＋</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setMenuVisible(true)}>
-            <Text style={{ fontSize: 20 }}>⋯</Text>
+          <TouchableOpacity style={styles.addBtn} onPress={handleAdd}>
+            <Text style={styles.addBtnText}>＋ New</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -213,21 +718,14 @@ export default function JournalScreen() {
         </View>
       )}
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabScroll}
-        contentContainerStyle={styles.tabScrollContent}
-      >
-        {FILTER_TABS.map((tab) => (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabContent}>
+        {FILTER_TABS.map(tab => (
           <TouchableOpacity
             key={tab}
             style={[styles.filterTab, activeFilter === tab && styles.filterTabActive]}
             onPress={() => setActiveFilter(tab)}
           >
-            <Text style={[styles.filterTabText, activeFilter === tab && styles.filterTabTextActive]}>
-              {tab}
-            </Text>
+            <Text style={[styles.filterTabText, activeFilter === tab && styles.filterTabTextActive]}>{tab}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -238,24 +736,35 @@ export default function JournalScreen() {
         </View>
       ) : (
         <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+          {entries.length > 0 && <MoodTimeline entries={entries} />}
+
           {filtered.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 60 }}>
               <Text style={{ fontSize: 48, marginBottom: 12 }}>📖</Text>
               <Text style={{ fontSize: 18, fontWeight: '800', color: '#1A1A1A' }}>No entries yet</Text>
-              <Text style={{ color: '#888', marginTop: 4 }}>Tap + to write your first memory</Text>
+              <Text style={{ color: '#888', marginTop: 4, marginBottom: 20 }}>Start writing your travel diary</Text>
+              <TouchableOpacity style={styles.emptyBtn} onPress={handleAdd}>
+                <Text style={styles.emptyBtnText}>✏️ Write first entry</Text>
+              </TouchableOpacity>
             </View>
           ) : (
-            <>
-              {todayEntries.length > 0 && (
-                <DayGroup label="TODAY" entries={todayEntries} accent="#FF9800" headerColor="#FFF8E1" textColor="#E65100" />
-              )}
-              {yesterdayEntries.length > 0 && (
-                <DayGroup label="YESTERDAY" entries={yesterdayEntries} accent={undefined} headerColor="#E8F5E9" textColor="#2E7D32" />
-              )}
-              {olderEntries.length > 0 && (
-                <DayGroup label="EARLIER" entries={olderEntries} accent={undefined} headerColor="#E3F2FD" textColor="#0D47A1" />
-              )}
-            </>
+            sortedDates.map(dateKey => (
+              <View key={dateKey} style={styles.dayGroup}>
+                <View style={styles.dayHeader}>
+                  <Text style={styles.dayLabel}>{formatDateLabel(dateKey)}</Text>
+                  <View style={styles.dayLine} />
+                  <Text style={styles.dayCount}>{grouped[dateKey].length}</Text>
+                </View>
+                {grouped[dateKey].map(entry => (
+                  <JournalCard
+                    key={entry.id}
+                    entry={entry}
+                    onEdit={() => handleEdit(entry)}
+                    onDelete={() => handleDelete(entry.id)}
+                  />
+                ))}
+              </View>
+            ))
           )}
 
           <View style={styles.footerDecor}>
@@ -263,244 +772,48 @@ export default function JournalScreen() {
             <Dot color="#DDD" size={4} style={{ position: 'relative', marginLeft: 8 }} />
             <Sparkle color="#FF9800" size={10} style={{ position: 'relative', marginLeft: 6 }} />
           </View>
-          <View style={{ height: 24 }} />
+          <View style={{ height: 32 }} />
         </ScrollView>
       )}
 
-      <MenuSheet
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-        items={[
-          { label: 'Sort by date', icon: '📅', onPress: () => {} },
-          { label: 'Export journal', icon: '📤', onPress: () => {} },
-        ]}
+      <EntryModal
+        visible={showModal}
+        onClose={() => { setShowModal(false); setEditEntry(null); }}
+        trips={trips}
+        activities={activities}
+        todayExpenses={todayExpenses}
+        editEntry={editEntry}
+        onSaved={loadData}
       />
-
-      <BottomSheet visible={showAddModal} onClose={() => setShowAddModal(false)} title="New Journal Entry">
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {/* Trip selector if multiple trips */}
-          {trips.length > 1 && (
-            <>
-              <Text style={styles.fieldLabel}>Trip</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, flexDirection: 'row', marginBottom: 8 }}>
-                {trips.map((t) => (
-                  <TouchableOpacity
-                    key={t.id}
-                    style={[styles.actChip, selectedTrip === t.id && styles.actChipActive]}
-                    onPress={() => setSelectedTrip(t.id)}
-                  >
-                    <Text style={[styles.actChipText, selectedTrip === t.id && styles.actChipTextActive]}>
-                      {t.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </>
-          )}
-
-          <Text style={styles.fieldLabel}>Title</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. Sunrise at Borobudur"
-            placeholderTextColor="#C0C0C0"
-            value={newTitle}
-            onChangeText={setNewTitle}
-          />
-
-          <Text style={styles.fieldLabel}>Notes</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Write about your experience…"
-            placeholderTextColor="#C0C0C0"
-            value={newText}
-            onChangeText={setNewText}
-            multiline
-            numberOfLines={4}
-          />
-
-          <Text style={styles.fieldLabel}>Location <Text style={styles.optionalLabel}>(optional)</Text></Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. Yogyakarta"
-            placeholderTextColor="#C0C0C0"
-            value={newLocation}
-            onChangeText={handleLocationChange}
-          />
-          {locationSuggestions.length > 0 && (
-            <View style={styles.suggestions}>
-              {locationSuggestions.map((s, i) => (
-                <TouchableOpacity key={i} style={styles.suggestionRow} onPress={() => { setNewLocation(s); setLocationSuggestions([]); }}>
-                  <Text style={{ fontSize: 14 }}>📍</Text>
-                  <Text style={styles.suggestionText} numberOfLines={1}>{s}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {activities.length > 0 && (
-            <>
-              <Text style={styles.fieldLabel}>
-                Link to activity <Text style={styles.optionalLabel}>(optional)</Text>
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activityChips}>
-                {activities.map((act) => (
-                  <TouchableOpacity
-                    key={act.id}
-                    style={[styles.actChip, newLinkedActivity === act.id && styles.actChipActive]}
-                    onPress={() => setNewLinkedActivity(newLinkedActivity === act.id ? '' : act.id)}
-                  >
-                    <Text style={[styles.actChipText, newLinkedActivity === act.id && styles.actChipTextActive]}>
-                      {act.title}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </>
-          )}
-
-          <Text style={styles.fieldLabel}>
-            Photos <Text style={styles.optionalLabel}>(optional)</Text>
-          </Text>
-          {photos.length > 0 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-              {photos.map((uri, i) => (
-                <View key={i} style={{ marginRight: 8, position: 'relative' }}>
-                  <Image source={{ uri }} style={{ width: 80, height: 80, borderRadius: 12 }} />
-                  <TouchableOpacity
-                    style={{ position: 'absolute', top: -6, right: -6, backgroundColor: '#F44336', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}
-                    onPress={() => setPhotos((prev) => prev.filter((_, idx) => idx !== i))}
-                  >
-                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </ScrollView>
-          )}
-          <TouchableOpacity style={styles.photoUploadBtn} onPress={handlePickPhotos}>
-            <Text style={{ fontSize: 22 }}>📸</Text>
-            <Text style={styles.photoUploadText}>
-              {photos.length > 0 ? `${photos.length} photo(s) selected · Add more` : 'Add photos'}
-            </Text>
-          </TouchableOpacity>
-
-          <SheetButton label={saving ? 'Saving...' : 'Save Entry'} onPress={handleSave} disabled={!newTitle.trim() || saving} />
-          <View style={{ height: 16 }} />
-        </ScrollView>
-      </BottomSheet>
     </SafeAreaView>
   );
 }
 
-function DayGroup({ label, entries, accent, headerColor, textColor }: {
-  label: string; entries: any[]; accent?: string; headerColor: string; textColor: string;
-}) {
-  return (
-    <View style={[styles.sectionBlock, { borderColor: headerColor }]}>
-      <View style={[styles.sectionHeader, { backgroundColor: headerColor }]}>
-        <View style={styles.sectionTitleWrap}>
-          <Sparkle color={textColor} size={12} style={{ position: 'relative', marginRight: 6 }} />
-          <Text style={[styles.sectionTitle, { color: textColor }]}>{label}</Text>
-        </View>
-        {accent ? (
-          <TravelStamp label="MEMORIES" color={accent} style={{ position: 'relative', transform: [] }} />
-        ) : (
-          <Cloud size={16} color={textColor} style={{ position: 'relative' }} />
-        )}
-      </View>
-      <View style={styles.sectionCard}>
-        {entries.map((entry) => (
-          <JournalCard key={entry.id} entry={entry} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function JournalCard({ entry }: { entry: any }) {
-  const time = entry.date
-    ? new Date(entry.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-    : '';
-
-  return (
-    <TouchableOpacity style={styles.card} activeOpacity={0.8}>
-      <View style={styles.thumbWrap}>
-        {entry.photos?.[0] ? (
-          <Image source={{ uri: entry.photos[0] }} style={styles.thumb} resizeMode="cover" />
-        ) : (
-          <View style={[styles.thumb, styles.thumbPlaceholder]}>
-            <Text style={{ fontSize: 32 }}>📝</Text>
-          </View>
-        )}
-      </View>
-      <View style={styles.cardContent}>
-        <View style={styles.cardTopRow}>
-          <Text style={styles.cardLocation} numberOfLines={1}>{entry.title}</Text>
-          <Text style={styles.cardTime}>{time}</Text>
-        </View>
-        {entry.trips?.name && (
-          <View style={styles.linkedChip}>
-            <Text style={{ fontSize: 10 }}>✈️</Text>
-            <Text style={styles.linkedChipText} numberOfLines={1}>{entry.trips.name}</Text>
-          </View>
-        )}
-        {entry.content ? (
-          <Text style={styles.cardNote} numberOfLines={2}>{entry.content}</Text>
-        ) : null}
-        {entry.photos?.length > 0 ? (
-          <Text style={styles.photosCount}>{entry.photos.length} photos</Text>
-        ) : null}
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#E8E8E8' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center' },
-  title: { fontSize: 24, fontWeight: '800', color: '#1A1A1A' },
-  headerIcons: { flexDirection: 'row', gap: 8 },
+  safe: { flex: 1, backgroundColor: '#F0F0F0' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  title: { fontSize: 22, fontWeight: '900', color: '#1A1A1A' },
+  headerSub: { fontSize: 12, color: '#FF9800', fontWeight: '600', marginTop: 1 },
+  headerIcons: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   iconBtn: { padding: 4 },
+  addBtn: { backgroundColor: '#FF9800', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
+  addBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   searchInput: { flex: 1, fontSize: 15, color: '#1A1A1A', backgroundColor: '#F5F5F5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   clearSearch: { fontSize: 16, color: '#888', marginLeft: 8, padding: 4 },
   tabScroll: { backgroundColor: '#fff', maxHeight: 52 },
-  tabScrollContent: { paddingHorizontal: 16, paddingVertical: 8, gap: 8, flexDirection: 'row' },
-  filterTab: { paddingHorizontal: 18, paddingVertical: 6, borderRadius: 20, backgroundColor: '#F0F0F0' },
-  filterTabActive: { backgroundColor: '#4CAF50' },
-  filterTabText: { fontSize: 14, fontWeight: '600', color: '#666' },
+  tabContent: { paddingHorizontal: 16, paddingVertical: 8, gap: 8, flexDirection: 'row' },
+  filterTab: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, backgroundColor: '#F0F0F0' },
+  filterTabActive: { backgroundColor: '#FF9800' },
+  filterTabText: { fontSize: 13, fontWeight: '600', color: '#666' },
   filterTabTextActive: { color: '#fff' },
-  scroll: { flex: 1, padding: 16 },
-  sectionBlock: { marginBottom: 16, borderRadius: 20, overflow: 'hidden', borderWidth: 3 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingTop: 12, paddingBottom: 24 },
-  sectionTitleWrap: { flexDirection: 'row', alignItems: 'center' },
-  sectionTitle: { fontSize: 12, fontWeight: '700', letterSpacing: 0.8 },
-  sectionCard: { backgroundColor: '#fff', borderRadius: 16, margin: 4, marginTop: -16, paddingHorizontal: 10, paddingVertical: 10, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: -2 }, elevation: 3 },
-  card: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: '#F0F0F0', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2, overflow: 'hidden' },
-  thumbWrap: { width: 88, height: 88 },
-  thumb: { width: 88, height: 88 },
-  thumbPlaceholder: { backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center' },
-  cardContent: { flex: 1, padding: 12, justifyContent: 'space-between' },
-  cardTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
-  cardLocation: { fontSize: 14, fontWeight: '700', color: '#1A1A1A', flex: 1 },
-  cardTime: { fontSize: 11, color: '#888', flexShrink: 0 },
-  linkedChip: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FFF8E1', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, alignSelf: 'flex-start', marginTop: 3, marginBottom: 3 },
-  linkedChipText: { fontSize: 10, fontWeight: '600', color: '#FF9800' },
-  cardNote: { fontSize: 13, color: '#666', lineHeight: 18, marginTop: 2 },
-  photosCount: { fontSize: 12, color: '#4CAF50', fontWeight: '600', marginTop: 4 },
+  scroll: { flex: 1, paddingTop: 12 },
+  dayGroup: { marginHorizontal: 16, marginBottom: 16 },
+  dayHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  dayLabel: { fontSize: 13, fontWeight: '800', color: '#1A1A1A' },
+  dayLine: { flex: 1, height: 1, backgroundColor: '#E0E0E0' },
+  dayCount: { fontSize: 11, fontWeight: '700', color: '#888', backgroundColor: '#F0F0F0', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+  emptyBtn: { backgroundColor: '#FF9800', borderRadius: 14, paddingHorizontal: 24, paddingVertical: 14 },
+  emptyBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
   footerDecor: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8 },
-  fieldLabel: { fontSize: 12, fontWeight: '700', color: '#888', letterSpacing: 0.4, marginBottom: 6, marginTop: 12 },
-  optionalLabel: { fontSize: 11, fontWeight: '400', color: '#BBB' },
-  input: { backgroundColor: '#FAFAFA', borderRadius: 12, borderWidth: 0.5, borderColor: '#E0E0E0', paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: '#1A1A1A' },
-  textArea: { height: 80, textAlignVertical: 'top' },
-  activityChips: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
-  actChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: '#F5F5F5', borderWidth: 1, borderColor: '#EBEBEB' },
-  actChipActive: { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' },
-  actChipText: { fontSize: 12, fontWeight: '600', color: '#666' },
-  actChipTextActive: { color: '#4CAF50' },
-  photoUploadBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 12, borderWidth: 1.5, borderColor: '#E0E0E0', borderStyle: 'dashed', marginBottom: 4 },
-  photoUploadText: { fontSize: 14, fontWeight: '600', color: '#666' },
-  suggestions: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#F0F0F0', marginTop: 4, marginBottom: 4, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, elevation: 3 },
-  suggestionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
-  suggestionText: { fontSize: 13, color: '#1A1A1A', flex: 1 },
 });

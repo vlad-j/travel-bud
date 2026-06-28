@@ -19,7 +19,8 @@ import { Sparkle, Dot } from '../components/TravelDecorations';
 import { STATUS_BG } from '../data/colors';
 import { getTodayActivities, calculateTripStatus } from '../lib/tripService';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 
 function WalletEmoji() {
   return <Text style={{ fontSize: 28 }}>👛</Text>;
@@ -29,51 +30,13 @@ const { width } = Dimensions.get('window');
 const HERO_H = 200;
 const CARD_WIDTH = width - 32;
 
-
-
 const QUICK_PILLS = [
-    {
-    label: 'Packing',
-    icon: require('../../assets/icons/packing.png'),
-    screen: 'Packing' as const,
-    color: '#4CAF50',
-  },
-
-{
-    label: 'Documents',
-    icon: require('../../assets/icons/documents.png'),
-    screen: 'Documents' as const,
-    color: '#FF9800',
-  },
-
-  {
-    label: 'Accommodation',
-    icon: require('../../assets/icons/accom.png'),
-    screen: 'Accommodation' as const,
-    color: '#9C27B0',
-  },
-
-
-   {
-    label: 'Transport',
-    icon: require('../../assets/icons/transportation.png'),
-    screen: 'Transport' as const,
-    color: '#2196F3',
-  }, 
-   {
-    label: 'Memories',
-    icon: require('../../assets/icons/memories.png'),
-    screen: 'MemoriesRecap' as const,
-    color: '#FF9800',
-  }, 
-  
-   {
-    label: 'Trip Settings',
-    icon: require('../../assets/icons/tripSettings.png'),
-    screen: 'TripSettings' as const,
-    color: '#666',
-  },
- 
+  { label: 'Packing', icon: require('../../assets/icons/packing.png'), screen: 'Packing' as const, color: '#4CAF50' },
+  { label: 'Documents', icon: require('../../assets/icons/documents.png'), screen: 'Documents' as const, color: '#FF9800' },
+  { label: 'Accommodation', icon: require('../../assets/icons/accom.png'), screen: 'Accommodation' as const, color: '#9C27B0' },
+  { label: 'Transport', icon: require('../../assets/icons/transportation.png'), screen: 'Transport' as const, color: '#2196F3' },
+  { label: 'Memories', icon: require('../../assets/icons/memories.png'), screen: 'MemoriesRecap' as const, color: '#FF9800' },
+  { label: 'Trip Settings', icon: require('../../assets/icons/tripSettings.png'), screen: 'TripSettings' as const, color: '#666' },
 ];
 
 function getDayNumber(startDate: string): number {
@@ -121,27 +84,27 @@ export default function HomeScreen() {
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const tripsLoadedRef = useRef(false);
-const [budgetData, setBudgetData] = useState({ total: 0, spent: 0, todaySpending: 0, percentUsed: 0 });
-useEffect(() => {
-  const unsubscribe = navigation.addListener('focus', () => {
-    loadData();
-  });
-  return unsubscribe;
-}, [navigation]);
+  const [budgetData, setBudgetData] = useState({ total: 0, spent: 0, todaySpending: 0, percentUsed: 0 });
+  const statusBarHeight = useStatusBarHeight();
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadData();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   async function loadData() {
-  setLoading(true);
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) { setLoading(false); return; }
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setLoading(false); return; }
 
-  const { data: memberships } = await supabase
-    .from('trip_members')
-    .select('trip_id')
-    .eq('user_id', user.id);
+    const { data: memberships } = await supabase
+      .from('trip_members')
+      .select('trip_id')
+      .eq('user_id', user.id);
 
-  
-
-if (!memberships || memberships.length === 0) {
+    if (!memberships || memberships.length === 0) {
       setLoading(false);
       return;
     }
@@ -169,83 +132,78 @@ if (!memberships || memberships.length === 0) {
 
       setTrips(sorted);
 
-      // Setam ref-ul DOAR la primul load
-if (!tripsLoadedRef.current && sorted[0]) {
-  tripsLoadedRef.current = true;
-  currentTripIdRef.current = sorted[0].id;
-  setCurrentTripId(sorted[0].id);
-  currentTripIndexRef.current = 0;
-  setCurrentTripIndex(0);
-  const acts = await getTodayActivities(sorted[0].id);
-  setActivities(acts);
-  await loadBudget(sorted[0].id, sorted[0].budget ?? 0);
-} else if (tripsLoadedRef.current) {
-  const idx = currentTripIndexRef.current;
-  if (sorted[idx]) {
-    const acts = await getTodayActivities(sorted[idx].id);
-    setActivities([...acts]);
-    await loadBudget(sorted[idx].id, sorted[idx].budget ?? 0);
-  }
-}
+      if (!tripsLoadedRef.current && sorted[0]) {
+        tripsLoadedRef.current = true;
+        currentTripIdRef.current = sorted[0].id;
+        setCurrentTripId(sorted[0].id);
+        currentTripIndexRef.current = 0;
+        setCurrentTripIndex(0);
+        const acts = await getTodayActivities(sorted[0].id);
+        setActivities(acts);
+        await loadBudget(sorted[0].id, sorted[0].budget ?? 0);
+      } else if (tripsLoadedRef.current) {
+        const idx = currentTripIndexRef.current;
+        if (sorted[idx]) {
+          const acts = await getTodayActivities(sorted[idx].id);
+          setActivities([...acts]);
+          await loadBudget(sorted[idx].id, sorted[idx].budget ?? 0);
+        }
+      }
     }
 
     setLoading(false);
   }
 
-async function onTripChange(index: number) {
-  currentTripIndexRef.current = index;
-  setCurrentTripIndex(index);
-  if (trips[index]) {
-    currentTripIdRef.current = trips[index].id;
-    setCurrentTripId(trips[index].id);
-    setActivitiesLoading(true);
-    const acts = await getTodayActivities(trips[index].id);
-    console.log('activities for trip:', trips[index].id, acts);
-
-    setActivities([...acts]);
-    setActivitiesLoading(false);
-    await loadBudget(trips[index].id, trips[index].budget ?? 0);
+  async function onTripChange(index: number) {
+    currentTripIndexRef.current = index;
+    setCurrentTripIndex(index);
+    if (trips[index]) {
+      currentTripIdRef.current = trips[index].id;
+      setCurrentTripId(trips[index].id);
+      setActivitiesLoading(true);
+      const acts = await getTodayActivities(trips[index].id);
+      setActivities([...acts]);
+      setActivitiesLoading(false);
+      await loadBudget(trips[index].id, trips[index].budget ?? 0);
+    }
   }
-}
 
   async function loadBudget(tripId: string, totalBudget: number) {
-  const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
 
-  const { data: allExpenses } = await supabase
-    .from('expenses')
-    .select('amount, date')
-    .eq('trip_id', tripId);
+    const { data: allExpenses } = await supabase
+      .from('expenses')
+      .select('amount, date')
+      .eq('trip_id', tripId);
 
-  const spent = (allExpenses ?? []).reduce((sum, e) => sum + Number(e.amount), 0);
+    const spent = (allExpenses ?? []).reduce((sum, e) => sum + Number(e.amount), 0);
 
-  const todaySpending = (allExpenses ?? [])
-    .filter(e => {
-      if (!e.date) return false;
-      const expenseDate = new Date(e.date).toISOString().split('T')[0];
-      return expenseDate === today;
-    })
-    .reduce((sum, e) => sum + Number(e.amount), 0);
+    const todaySpending = (allExpenses ?? [])
+      .filter(e => {
+        if (!e.date) return false;
+        const expenseDate = new Date(e.date).toISOString().split('T')[0];
+        return expenseDate === today;
+      })
+      .reduce((sum, e) => sum + Number(e.amount), 0);
 
-  const percentUsed = totalBudget > 0 ? Math.round((spent / totalBudget) * 100) : 0;
+    const percentUsed = totalBudget > 0 ? Math.round((spent / totalBudget) * 100) : 0;
 
-  setBudgetData({
-    total: totalBudget,
-    spent: Math.round(spent),
-    todaySpending: Math.round(todaySpending),
-    percentUsed,
-  });
-}
+    setBudgetData({
+      total: totalBudget,
+      spent: Math.round(spent),
+      todaySpending: Math.round(todaySpending),
+      percentUsed,
+    });
+  }
 
   const currentTrip = trips[currentTripIndex];
-  const currentDay = currentTrip ? getDayNumber(currentTrip.start_date) : 0;
-  const totalDays = currentTrip ? getTotalDays(currentTrip.start_date, currentTrip.end_date) : 0;
   const isActive = currentTrip?.status === 'active';
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={[]}>
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.heroBlock}>
-          <View style={styles.heroScene}>
+      <View style={[styles.heroBlock, { marginBottom: 80 + statusBarHeight }]}>
+          <View style={[styles.heroScene, { height: HERO_H + statusBarHeight }]}>
             <View style={styles.heroBgSky} />
             <View style={styles.heroBgGround} />
             <View style={[styles.heroHill, { left: -10, backgroundColor: '#66BB6A' }]} />
@@ -265,7 +223,7 @@ async function onTripChange(index: number) {
           </View>
 
           <TouchableOpacity
-            style={styles.heroBell}
+            style={[styles.heroBell, { top: statusBarHeight + 14 }]}
             onPress={() => navigation.navigate('Notifications')}
             activeOpacity={0.8}
           >
@@ -274,7 +232,7 @@ async function onTripChange(index: number) {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.heroTripsBtn}
+            style={[styles.heroTripsBtn, { top: statusBarHeight + 14 }]}
             onPress={() => navigation.navigate('MyTrips')}
             activeOpacity={0.8}
           >
@@ -380,21 +338,21 @@ async function onTripChange(index: number) {
           )}
         </View>
 
-<View style={styles.gridWrap}>
-  {QUICK_PILLS.map((pill) => (
-    <TouchableOpacity
-      key={pill.label}
-      style={styles.gridTile}
-      onPress={() => navigation.navigate(pill.screen, { tripId: currentTripIdRef.current })}
-      activeOpacity={0.75}
-    >
-      <View style={styles.gridIconCircle}>
-        <Image source={pill.icon} style={styles.gridIconImage} resizeMode="cover" />
-      </View>
-      <Text style={[styles.gridLabel, { color: pill.color }]}>{pill.label}</Text>
-    </TouchableOpacity>
-  ))}
-</View>
+        <View style={[styles.gridWrap, { marginTop: -(statusBarHeight + 30) }]}>
+          {QUICK_PILLS.map((pill) => (
+            <TouchableOpacity
+              key={pill.label}
+              style={styles.gridTile}
+              onPress={() => navigation.navigate(pill.screen, { tripId: currentTripIdRef.current })}
+              activeOpacity={0.75}
+            >
+              <View style={styles.gridIconCircle}>
+                <Image source={pill.icon} style={styles.gridIconImage} resizeMode="cover" />
+              </View>
+              <Text style={[styles.gridLabel, { color: pill.color }]}>{pill.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
         <SectionBlock
           title="TODAY'S ACTIVITIES"
@@ -402,14 +360,13 @@ async function onTripChange(index: number) {
           textColor="#1B5E20"
           right={<Text style={styles.seeAll}>See all</Text>}
         >
-{activitiesLoading ? (
-  <ActivityIndicator color="#4CAF50" style={{ padding: 20 }} />
-) : activities.length > 0 ? (
+          {activitiesLoading ? (
+            <ActivityIndicator color="#4CAF50" style={{ padding: 20 }} />
+          ) : activities.length > 0 ? (
             activities.map((activity) => {
               const status = getActivityStatus(activity.time?.slice(0, 5) ?? '00:00', activity.status ?? 'upcoming');
               const categoryKey = activity.category?.toLowerCase() ?? 'default';
               const iconData = CATEGORY_ICONS[categoryKey] ?? CATEGORY_ICONS.default;
-              
               return (
                 <View
                   key={activity.id}
@@ -450,7 +407,6 @@ async function onTripChange(index: number) {
               <BudgetRow label="Total budget" value={`€${budgetData.total.toLocaleString()}`} dotColor="#1A1A1A" />
               <BudgetRow label="Spent so far" value={`€${budgetData.spent.toLocaleString()}`} dotColor="#4CAF50" />
               <BudgetRow label="Today's spending" value={`€${budgetData.todaySpending}`} dotColor="#FF9800" />
-              
             </View>
             <View style={styles.walletEmojiWrap}>
               <WalletEmoji />
@@ -502,16 +458,16 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#E8E8E8' },
   scroll: { flex: 1 },
   heroBlock: { position: 'relative', marginBottom: 80 },
-  heroScene: { height: HERO_H, overflow: 'hidden', position: 'relative' },
+  heroScene: { overflow: 'hidden', position: 'relative' },
   heroBgSky: { ...StyleSheet.absoluteFillObject, backgroundColor: '#81D4FA' },
   heroBgGround: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 48, backgroundColor: '#A5D6A7' },
   heroHill: { position: 'absolute', bottom: 0, width: 140, height: 80, borderRadius: 60 },
   heroLandmarkWrap: { position: 'absolute', bottom: 28, left: 0, right: 0, alignItems: 'center' },
   heroLandmarkEmoji: { fontSize: 80 },
   heroDecor: { position: 'absolute', fontSize: 22 },
-  heroBell: { position: 'absolute', top: 14, right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center' },
+  heroBell: { position: 'absolute', right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center' },
   bellDot: { position: 'absolute', top: 6, right: 6, width: 9, height: 9, borderRadius: 4.5, backgroundColor: '#FF5252', borderWidth: 1.5, borderColor: '#fff' },
-  heroTripsBtn: { position: 'absolute', top: 14, left: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center' },
+  heroTripsBtn: { position: 'absolute', left: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center' },
   tripCountBadge: { position: 'absolute', top: -4, right: -4, width: 16, height: 16, borderRadius: 8, backgroundColor: '#4CAF50', alignItems: 'center', justifyContent: 'center' },
   tripCountText: { fontSize: 10, fontWeight: '800', color: '#fff' },
   carouselWrap: { position: 'absolute', bottom: -60, left: 0, right: 0 },
@@ -535,13 +491,12 @@ const styles = StyleSheet.create({
   paginationRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 8, gap: 6 },
   paginationDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CCC' },
   paginationDotActive: { width: 18, backgroundColor: '#4CAF50' },
-  
-gridWrap: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, paddingVertical: 16, justifyContent: 'space-between', rowGap: 20 },
-gridTile: { width: '30%', alignItems: 'center', justifyContent: 'center', gap: 8 },
-gridIconCircle: { width: 80, height: 80, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-gridIconImage: { width: '100%', height: '100%' },
-gridEmoji: { fontSize: 48 },
-gridLabel: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  gridWrap: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, paddingVertical: 16, justifyContent: 'space-between', rowGap: 20 },
+  gridTile: { width: '30%', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  gridIconCircle: { width: 80, height: 80, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  gridIconImage: { width: '100%', height: '100%' },
+  gridEmoji: { fontSize: 48 },
+  gridLabel: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
   sectionBlock: { marginHorizontal: 16, marginTop: 16, borderRadius: 20, overflow: 'hidden', backgroundColor: '#C8E6C9', borderWidth: 3, borderColor: '#C8E6C9' },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingTop: 12, paddingBottom: 24 },
   sectionTitleWrap: { flexDirection: 'row', alignItems: 'center' },
@@ -562,8 +517,5 @@ gridLabel: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
   budgetDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0 },
   budgetLabel: { fontSize: 11, color: '#888', marginBottom: 1 },
   budgetValue: { fontSize: 15, fontWeight: '800', color: '#1A1A1A' },
-  partnerRow: { marginTop: 2 },
-  partnerText: { fontSize: 12, color: '#666' },
-  partnerAmt: { fontWeight: '700', color: '#FF9800' },
   footerDecor: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 20 },
 });

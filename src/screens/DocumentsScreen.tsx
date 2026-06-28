@@ -309,7 +309,7 @@ const { error: uploadError } = await supabase.storage
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color="#4CAF50" />
         </View>
@@ -320,7 +320,7 @@ const { error: uploadError } = await supabase.storage
   // ─── DASHBOARD ──
   if (screen === 'dashboard') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <ArrowLeftIcon size={24} />
@@ -379,7 +379,7 @@ const { error: uploadError } = await supabase.storage
   // ─── ADD HUB ──
   if (screen === 'addHub') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={goToDashboard}>
             <CloseIcon size={22} />
@@ -405,7 +405,7 @@ const { error: uploadError } = await supabase.storage
   // ─── UPLOAD PDF ──
   if (screen === 'uploadPdf') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('addHub')}>
             <ArrowLeftIcon size={24} />
@@ -431,7 +431,7 @@ const { error: uploadError } = await supabase.storage
   // ─── EMAIL INTRO ──
   if (screen === 'emailIntro') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('addHub')}>
             <ArrowLeftIcon size={24} />
@@ -451,7 +451,7 @@ const { error: uploadError } = await supabase.storage
   // ─── MANUAL ADD ──
   if (screen === 'manual') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('addHub')}>
             <CloseIcon size={22} />
@@ -516,7 +516,7 @@ const { error: uploadError } = await supabase.storage
   if (screen === 'detail' && selectedDoc) {
     const warning = getExpiryWarning(selectedDoc.expires_at ?? '');
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={goToDashboard}>
             <ArrowLeftIcon size={24} />
@@ -555,7 +555,7 @@ const { error: uploadError } = await supabase.storage
   // ─── SUCCESS ──
   if (screen === 'success') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <ScrollView contentContainerStyle={successStyles.content} showsVerticalScrollIndicator={false}>
           <Text style={{ fontSize: 80, marginBottom: 16 }}>📄</Text>
           <Text style={successStyles.heading}>All set!</Text>

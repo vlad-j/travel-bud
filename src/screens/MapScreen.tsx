@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { MAP_PLACES } from '../data/sampleData';
 import { Sparkle, Cloud, Dot, DottedLine, TravelStamp } from '../components/TravelDecorations';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 
 const { width, height } = Dimensions.get('window');
 
@@ -39,13 +40,14 @@ export default function MapScreen() {
   const [activeTab, setActiveTab] = useState('Route');
   const [selectedPlace, setSelectedPlace] = useState(MAP_PLACES[0]);
   const navigation = useNavigation<any>();
+  const statusBarHeight = useStatusBarHeight();
 
   const mapH = height * 0.52;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={[]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: statusBarHeight }]}>
         <View style={styles.headerLeft}>
           <Sparkle color="#FF9800" size={14} style={{ position: 'relative', marginRight: 4 }} />
           <Text style={styles.title}>Explore</Text>

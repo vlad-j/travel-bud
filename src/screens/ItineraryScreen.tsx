@@ -14,6 +14,7 @@ import { STATUS_BG } from '../data/colors';
 import { supabase } from '../lib/supabase';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
 import { searchLocations } from '../lib/locationService';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function localDateStr(date: Date): string {
@@ -510,7 +511,6 @@ export default function ItineraryScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { currentTripId, setCurrentTripId } = useCurrentTrip();
-
   const [allTrips, setAllTrips] = useState<any[]>([]);
   const [trip, setTrip] = useState<any>(null);
   const [days, setDays] = useState<number[]>([]);
@@ -522,6 +522,7 @@ export default function ItineraryScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTripSelector, setShowTripSelector] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const statusBarHeight = useStatusBarHeight();
 
   useFocusEffect(useCallback(() => {
     loadData(currentTripIdRef.current ?? route.params?.tripId);
@@ -603,7 +604,7 @@ export default function ItineraryScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color="#4CAF50" />
         </View>
@@ -613,8 +614,8 @@ export default function ItineraryScreen() {
 
   if (!trip) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.header}>
+      <SafeAreaView style={styles.safe} edges={[]}>
+        <View style={[styles.header, { paddingTop: statusBarHeight }]}>
           <Text style={styles.title}>Itinerary</Text>
         </View>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
@@ -630,9 +631,9 @@ export default function ItineraryScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={[]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: statusBarHeight }]}>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Itinerary</Text>
           <TouchableOpacity style={styles.tripSelector} onPress={() => setShowTripSelector(true)}>

@@ -53,7 +53,7 @@ export default function TravelersScreen() {
   const settledExpenses = EXPENSES_LIST.filter((e) => e.settled);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={[]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>

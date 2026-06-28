@@ -10,6 +10,7 @@ import { Sparkle, Dot } from '../components/TravelDecorations';
 import { PASTEL } from '../data/colors';
 import { supabase } from '../lib/supabase';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CATEGORY_META: Record<string, { emoji: string; color: string; bg: string; label: string }> = {
@@ -187,6 +188,7 @@ export default function BudgetScreen() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const statusBarHeight = useStatusBarHeight();
 
   const loadData = useCallback(async (tripId?: string) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -298,7 +300,7 @@ export default function BudgetScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color="#4CAF50" />
         </View>
@@ -308,8 +310,8 @@ export default function BudgetScreen() {
 
   if (!trip) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.header}>
+      <SafeAreaView style={styles.safe} edges={[]}>
+        <View style={[styles.header, { paddingTop: statusBarHeight }]}>
           <Text style={styles.headerTitle}>Budget</Text>
         </View>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
@@ -322,9 +324,9 @@ export default function BudgetScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={[]}>
       {/* ─── Header ─── */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: statusBarHeight }]}>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Budget</Text>
           <Text style={styles.headerTrip} numberOfLines={1}>{trip.name}</Text>

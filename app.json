@@ -14,8 +14,24 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#ffffff"
+      },
+      "androidStatusBar": {
+        "backgroundColor": "#00000000",
+        "translucent": true
+      },
+      "navigationBar": {
+        "backgroundColor": "#00000000"
       }
     },
-    "plugins": ["expo-font", "expo-web-browser"]
+    "plugins": [
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-system-ui",
+        {
+          "backgroundColor": "#00000000"
+        }
+      ]
+    ]
   }
 }

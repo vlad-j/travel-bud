@@ -3,12 +3,12 @@ import { registerRootComponent } from 'expo';
 import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './src/lib/supabase';
 import AppNavigator from './src/navigation/AppNavigator';
 import AuthNavigator from './src/navigation/AuthNavigator';
 import { TripProvider } from './src/context/TripContext';
-
 
 async function syncTripStatuses(userId: string) {
   const { data: memberships } = await supabase
@@ -31,8 +31,6 @@ async function syncTripStatuses(userId: string) {
     .in('id', tripIds).gt('start_date', today);
 }
 
-
-
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,16 +38,12 @@ function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) {
-  syncTripStatuses(session.user.id);
-}
+      if (session) syncTripStatuses(session.user.id);
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
-      }
+      (_event, session) => { setSession(session); }
     );
 
     return () => subscription.unsubscribe();
@@ -58,18 +52,20 @@ function App() {
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <StatusBar style="dark" translucent backgroundColor="transparent" />
         <ActivityIndicator size="large" color="#4CAF50" />
       </View>
     );
   }
 
-return (
-  <NavigationContainer>
-    <TripProvider>
-      {session ? <AppNavigator /> : <AuthNavigator />}
-    </TripProvider>
-  </NavigationContainer>
-);
+  return (
+    <NavigationContainer>
+      <TripProvider>
+        <StatusBar style="dark" translucent backgroundColor="transparent" />
+        {session ? <AppNavigator /> : <AuthNavigator />}
+      </TripProvider>
+    </NavigationContainer>
+  );
 }
 
 registerRootComponent(App);

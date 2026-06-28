@@ -226,7 +226,7 @@ async function handlePickFile() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color="#4CAF50" />
         </View>
@@ -237,7 +237,7 @@ async function handlePickFile() {
   // ── OVERVIEW ──
   if (screen === 'overview') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <ArrowLeftIcon size={24} />
@@ -266,7 +266,7 @@ async function handlePickFile() {
   // ── HUB ──
   if (screen === 'hub') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={goToOverview}>
             <ArrowLeftIcon size={24} />
@@ -306,7 +306,7 @@ async function handlePickFile() {
   // ── PDF UPLOAD ──
   if (screen === 'pdfUpload') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('hub')}>
             <ArrowLeftIcon size={24} />
@@ -340,7 +340,7 @@ async function handlePickFile() {
   // ── PDF REVIEW ──
   if (screen === 'pdfReview') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('pdfUpload')}>
             <ArrowLeftIcon size={24} />
@@ -381,7 +381,7 @@ async function handlePickFile() {
   // ── GMAIL INTRO ──
   if (screen === 'gmailIntro') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('hub')}>
             <ArrowLeftIcon size={24} />
@@ -417,7 +417,7 @@ async function handlePickFile() {
   // ── REUSE ──
   if (screen === 'reuse') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('hub')}>
             <ArrowLeftIcon size={24} />
@@ -456,7 +456,7 @@ async function handlePickFile() {
   // ── MANUAL STEP 1 ──
   if (screen === 'manual1') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('hub')}><CloseIcon size={22} /></TouchableOpacity>
           <Text style={styles.title}>Add Manually</Text>
@@ -488,7 +488,7 @@ async function handlePickFile() {
   // ── MANUAL STEP 2 ──
   if (screen === 'manual2') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('manual1')}><ArrowLeftIcon size={24} /></TouchableOpacity>
           <Text style={styles.title}>Add Manually</Text>
@@ -560,7 +560,7 @@ async function handlePickFile() {
   // ── MANUAL STEP 3 ──
   if (screen === 'manual3') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('manual2')}><ArrowLeftIcon size={24} /></TouchableOpacity>
           <Text style={styles.title}>Add Manually</Text>
@@ -593,7 +593,7 @@ async function handlePickFile() {
   // ── MANUAL STEP 4 ──
   if (screen === 'manual4') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('manual3')}><ArrowLeftIcon size={24} /></TouchableOpacity>
           <Text style={styles.title}>Add Manually</Text>
@@ -628,7 +628,7 @@ async function handlePickFile() {
   if (screen === 'success') {
     const lastAdded = accommodations[accommodations.length - 1];
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={[]}>
         <ScrollView contentContainerStyle={successStyles.content} showsVerticalScrollIndicator={false}>
           <View style={successStyles.illustration}>
             <View style={successStyles.illBg}>
