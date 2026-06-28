@@ -18,6 +18,7 @@ import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 import { getDestinationHero } from '../lib/destinationHero';
 import { evaluateContextCard } from '../lib/contextCardProvider';
 import type { ContextCardInput } from '../lib/contextCardProvider';
+import { useWeather } from '../../hooks/useWeather';
 
 function WalletEmoji() {
   return <Text style={{ fontSize: 28 }}>👛</Text>;
@@ -102,6 +103,10 @@ export default function HomeScreen() {
   const [budgetData, setBudgetData] = useState({ total: 0, spent: 0, todaySpending: 0, percentUsed: 0 });
   const [contextCardInput, setContextCardInput] = useState<ContextCardInput | null>(null);
   const [userName, setUserName] = useState('');
+
+  // Weather for current destination
+  const weatherQuery = currentDestination?.name ?? currentDestination?.country ?? null;
+  const { weather } = useWeather(weatherQuery);
 
   // Load user name once
   useEffect(() => {
@@ -315,9 +320,15 @@ export default function HomeScreen() {
             <Sparkle color="#FFD700" size={12} style={{ position: 'absolute', left: 46, top: 34 }} />
             <Sparkle color="#FFD700" size={10} style={{ position: 'absolute', right: 54, top: 28 }} />
 
-            {/* Greeting */}
+            {/* Greeting + Weather */}
             <View style={[styles.greetingWrap, { top: statusBarHeight + 12 }]}>
               <Text style={styles.greetingText}>{greeting.text} {greeting.emoji}</Text>
+              {weather && (
+                <View style={styles.weatherPill}>
+                  <Text style={styles.weatherEmoji}>{weather.icon}</Text>
+                  <Text style={styles.weatherText}>{weather.tempC}°C · {weather.condition}</Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -467,7 +478,7 @@ export default function HomeScreen() {
         )}
 
         {/* ─── Quick Pills ──────────────────────────────────────────── */}
-        <View style={[styles.gridWrap, { marginTop: -(statusBarHeight +1) }]}>
+        <View style={[styles.gridWrap, { marginTop: -(statusBarHeight + 30) }]}>
           {QUICK_PILLS.map((pill) => (
             <TouchableOpacity
               key={pill.label}
@@ -599,6 +610,9 @@ const styles = StyleSheet.create({
   heroDecor: { position: 'absolute', fontSize: 22 },
   greetingWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   greetingText: { fontSize: 14, fontWeight: '700', color: 'rgba(255,255,255,0.92)', textShadowColor: 'rgba(0,0,0,0.15)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  weatherPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, marginTop: 6 },
+  weatherEmoji: { fontSize: 14 },
+  weatherText: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.92)' },
   heroBell: { position: 'absolute', right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center' },
   bellDot: { position: 'absolute', top: 6, right: 6, width: 9, height: 9, borderRadius: 4.5, backgroundColor: '#FF5252', borderWidth: 1.5, borderColor: '#fff' },
   heroTripsBtn: { position: 'absolute', left: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center' },
