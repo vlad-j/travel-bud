@@ -17,6 +17,7 @@ import {
 } from '../components/TravelBuddyIcons';
 import { supabase } from '../lib/supabase';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
+import { createActivitiesFromAccommodation, deleteActivitiesBySource } from '../lib/itineraryAutoCreate';
 import { parseBookingPDF, ParsedAccommodation } from '../lib/pdfParser';
 
 const { width } = Dimensions.get('window');
@@ -192,7 +193,6 @@ async function handlePickFile() {
     setSaving(true);
 
     const { data, error } = await supabase.from('accommodations').insert({
-      
       trip_id: trip.id,
       name: name.trim(),
       address: address.trim(),
@@ -202,10 +202,25 @@ async function handlePickFile() {
       platform: platform,
       price: priceForStay ? parseFloat(priceForStay.replace(/[^0-9.]/g, '')) : null,
     }).select().single();
-    console.log('save result:', data, 'error:', error?.message);
 
     if (error) { Alert.alert('Error', error.message); setSaving(false); return; }
     setAccommodations((prev) => [...prev, data]);
+
+    // Auto-create check-in / check-out itinerary activities
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && data) {
+        await createActivitiesFromAccommodation(data.id, trip.id, {
+          name: name.trim(),
+          check_in: checkInDate ? checkInDate.toISOString() : null,
+          check_out: checkOutDate ? checkOutDate.toISOString() : null,
+          address: address.trim() || null,
+        }, user.id);
+      }
+    } catch (e) {
+      console.warn('Could not auto-create itinerary activities:', e);
+    }
+
     setSaving(false);
     setScreen('success');
   }

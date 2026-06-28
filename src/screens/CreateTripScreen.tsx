@@ -57,7 +57,6 @@ export default function CreateTripScreen() {
   const [budget, setBudget] = useState('');
   const [currency, setCurrency] = useState('EUR (€)');
   const [selectedCover, setSelectedCover] = useState('1');
-  const [inviteCode] = useState('JAVA2025-VR7K');
   const [saving, setSaving] = useState(false);
 
   const selectedCoverItem = COVER_ILLUSTRATIONS.find((c) => c.id === selectedCover);
@@ -99,6 +98,7 @@ export default function CreateTripScreen() {
         status: 'active',
         cover_destination: selectedCoverItem?.emoji ?? '🌍',
         created_by: user.id,
+        invite_code: Math.random().toString(36).substring(2, 8).toUpperCase(),
       })
       .select()
       .single();
@@ -320,29 +320,6 @@ export default function CreateTripScreen() {
                 )}
               </TouchableOpacity>
             ))}
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionLabel}>
-            <Text style={{ fontSize: 14, marginRight: 4 }}>👥</Text>
-            <Text style={styles.sectionLabelText}>INVITE PARTNER</Text>
-          </View>
-          <View style={styles.inviteCard}>
-            <View style={styles.inviteTop}>
-              <Text style={styles.inviteLabel}>Share this code with your travel partner</Text>
-            </View>
-            <View style={styles.inviteCodeBox}>
-              <Text style={styles.inviteCode}>{inviteCode}</Text>
-              <TouchableOpacity style={styles.copyBtn}>
-                <Text style={styles.copyBtnText}>📋 Copy</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.inviteOr}>— or share via link —</Text>
-            <TouchableOpacity style={styles.shareLinkBtn}>
-              <Text style={{ fontSize: 16 }}>🔗</Text>
-              <Text style={styles.shareLinkText}>Share invite link</Text>
-            </TouchableOpacity>
           </View>
         </View>
 

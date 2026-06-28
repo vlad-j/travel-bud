@@ -12,6 +12,7 @@ import StatusBadge from '../components/StatusBadge';
 import { MenuSheet } from '../components/BottomSheet';
 import BottomSheet, { SheetButton } from '../components/BottomSheet';
 import { Dot, Sparkle } from '../components/TravelDecorations';
+import { createActivityFromTransport, deleteActivitiesBySource } from '../lib/itineraryAutoCreate';
 import SectionBlock from '../components/SectionBlock';
 
 const TRANSPORT_TYPES = ['Train', 'Ferry', 'Bus', 'Taxi', 'Rental Car'];
@@ -181,9 +182,26 @@ export default function TransportScreen() {
   async function handleSave(data: any) {
     const tripId = currentTripIdRef.current;
     if (!tripId) { Alert.alert('Error', 'No active trip.'); return; }
-    const { error } = await supabase.from('transport').insert({ ...data, trip_id: tripId });
+
+    const { data: saved, error } = await supabase
+      .from('transport')
+      .insert({ ...data, trip_id: tripId })
+      .select()
+      .single();
+
     if (error) { Alert.alert('Error', error.message); return; }
-    Alert.alert('✅ Saved', 'Transport added successfully.');
+
+    // Auto-create itinerary activity
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && saved) {
+        await createActivityFromTransport(saved.id, tripId, data, user.id);
+      }
+    } catch (e) {
+      console.warn('Could not auto-create itinerary activity:', e);
+    }
+
+    Alert.alert('✅ Saved', 'Transport added to your itinerary.');
     await loadData();
   }
 
@@ -192,6 +210,8 @@ export default function TransportScreen() {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
+          // Delete linked itinerary activities first
+          await deleteActivitiesBySource(id, 'transport');
           await supabase.from('transport').delete().eq('id', id);
           await loadData();
         },
