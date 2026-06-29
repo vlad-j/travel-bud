@@ -155,10 +155,54 @@ function formatDate(ts: string | null): string {
   catch { return ''; }
 }
 
+function EditTransportForm({ item, onSave, onClose }: { item: any; onSave: (id: string, data: any) => Promise<void>; onClose: () => void }) {
+  const [from, setFrom] = React.useState(item.departure_location ?? '');
+  const [to, setTo] = React.useState(item.arrival_location ?? '');
+  const [airline, setAirline] = React.useState(item.airline ?? '');
+  const [flightNum, setFlightNum] = React.useState(item.flight_number ?? '');
+  const [departureTime, setDepartureTime] = React.useState(item.departure_time ?? '');
+  const [arrivalTime, setArrivalTime] = React.useState(item.arrival_time ?? '');
+  const [saving, setSaving] = React.useState(false);
+
+  return (
+    <>
+      {item.type === 'Flight' && (
+        <>
+          <F label="Airline" placeholder="e.g. Garuda Indonesia" value={airline} onChangeText={setAirline} />
+          <F label="Flight number" placeholder="e.g. GA408" value={flightNum} onChangeText={setFlightNum} />
+        </>
+      )}
+      <F label="From" placeholder="Departure location" value={from} onChangeText={setFrom} />
+      <F label="To" placeholder="Arrival location" value={to} onChangeText={setTo} />
+      <F label="Departure time" placeholder="2025-05-16 18:20" value={departureTime} onChangeText={setDepartureTime} optional />
+      <F label="Arrival time" placeholder="2025-05-16 19:45" value={arrivalTime} onChangeText={setArrivalTime} optional />
+      <SheetButton
+        label={saving ? 'Saving...' : 'Save Changes'}
+        disabled={!from.trim() || !to.trim() || saving}
+        onPress={async () => {
+          setSaving(true);
+          await onSave(item.id, {
+            ...item,
+            departure_location: from,
+            arrival_location: to,
+            airline: airline || null,
+            flight_number: flightNum || null,
+            departure_time: departureTime || null,
+            arrival_time: arrivalTime || null,
+          });
+          setSaving(false);
+          onClose();
+        }}
+      />
+    </>
+  );
+}
+
 export default function TransportScreen() {
   const [activeTab, setActiveTab] = useState('Flights');
   const [menuVisible, setMenuVisible] = useState(false);
   const [addFlightVisible, setAddFlightVisible] = useState(false);
+  const [editItem, setEditItem] = useState<any | null>(null);
   const [addTransferVisible, setAddTransferVisible] = useState(false);
   const [addOtherVisible, setAddOtherVisible] = useState(false);
   const [transportType, setTransportType] = useState('Train');
@@ -227,6 +271,25 @@ export default function TransportScreen() {
   const others = transports.filter(t => !['Flight', 'Taxi', 'Rental Car'].includes(t.type));
   const nextUp = transports.find(t => t.status === 'UPCOMING') ?? transports[0];
   const visibleList = activeTab === 'Flights' ? flights : activeTab === 'Transfers' ? transfers : others;
+
+  async function handleEdit(id: string, data: any) {
+    const { error } = await supabase.from('transport').update(data).eq('id', id);
+    if (error) { Alert.alert('Error', error.message); return; }
+    // Update linked activity
+    try {
+      await supabase.from('activities')
+        .update({
+          title: data.airline
+            ? `${data.airline}${data.flight_number ? ' ' + data.flight_number : ''}: ${data.departure_location} → ${data.arrival_location}`
+            : `${data.type}: ${data.departure_location} → ${data.arrival_location}`,
+          location: data.departure_location,
+        })
+        .eq('source_id', id)
+        .eq('source_type', 'transport');
+    } catch (e) {}
+    setEditItem(null);
+    await loadData();
+  }
 
   const MENU_ITEMS = [
     { label: 'Add flight', icon: '✈️', onPress: () => setAddFlightVisible(true) },
@@ -348,7 +411,13 @@ export default function TransportScreen() {
                 <View key={t.id}>
                   <TouchableOpacity
                     style={styles.flightRow}
-                    onLongPress={() => handleDelete(t.id)}
+                    onLongPress={() => {
+                      Alert.alert(t.airline ? `${t.airline} ${t.flight_number ?? ''}` : t.type, 'What would you like to do?', [
+                        { text: 'Edit', onPress: () => setEditItem(t) },
+                        { text: 'Delete', style: 'destructive', onPress: () => handleDelete(t.id) },
+                        { text: 'Cancel', style: 'cancel' },
+                      ]);
+                    }}
                     activeOpacity={0.7}
                   >
                     <View style={styles.flightIcon}>
@@ -402,6 +471,10 @@ export default function TransportScreen() {
           ))}
         </ScrollView>
         <OtherTransportForm type={transportType} onSave={handleSave} onClose={() => setAddOtherVisible(false)} />
+      </BottomSheet>
+
+      <BottomSheet visible={!!editItem} onClose={() => setEditItem(null)} title="Edit Transport">
+        {editItem && <EditTransportForm item={editItem} onSave={handleEdit} onClose={() => setEditItem(null)} />}
       </BottomSheet>
     </SafeAreaView>
   );

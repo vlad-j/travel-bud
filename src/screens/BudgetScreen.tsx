@@ -54,7 +54,7 @@ async function getExchangeRate(from: string, to: string): Promise<number> {
 }
 
 // ─── Add Expense Modal ────────────────────────────────────────────────────────
-function AddExpenseModal({ visible, onClose, tripId, currency, members, currentUserId, onAdded }: {
+function AddExpenseModal({ visible, onClose, tripId, currency, members, currentUserId, onAdded, editData }: {
   visible: boolean;
   onClose: () => void;
   tripId: string;
@@ -62,6 +62,7 @@ function AddExpenseModal({ visible, onClose, tripId, currency, members, currentU
   members: any[];
   currentUserId: string;
   onAdded: () => void;
+  editData?: any | null;
 }) {
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
@@ -84,14 +85,24 @@ function AddExpenseModal({ visible, onClose, tripId, currency, members, currentU
 
   useEffect(() => {
     if (visible) {
-      setPaidBy(currentUserId);
-      setSplitWith([]);
+      if (editData) {
+        setTitle(editData.title ?? '');
+        setAmount(String(editData.amount ?? ''));
+        setCategory(editData.category ?? 'food');
+        setNotes(editData.notes ?? '');
+        setPaidBy(editData.paid_by ?? currentUserId);
+        setSplitWith(editData.split_with ?? []);
+      } else {
+        setTitle(''); setAmount(''); setCategory('food'); setNotes('');
+        setPaidBy(currentUserId);
+        setSplitWith([]);
+      }
       setUseLocalCurrency(false);
       setLocalAmount('');
       setLocalCurrency('');
       setConvertedAmount(null);
     }
-  }, [visible, currentUserId]);
+  }, [visible, currentUserId, editData]);
 
   async function handleConvert() {
     if (!localAmount || !localCurrency) return;
@@ -117,19 +128,26 @@ function AddExpenseModal({ visible, onClose, tripId, currency, members, currentU
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setSaving(false); return; }
 
-    const { error } = await supabase.from('expenses').insert({
-      trip_id: tripId,
+    const payload = {
       title: title.trim(),
       amount: parseFloat(amount),
       currency: currency || 'EUR',
       category,
-      date: new Date().toISOString(),
       paid_by: paidBy,
       notes: notes || null,
       split_with: splitWith.length > 0 ? splitWith : null,
       local_amount: useLocalCurrency && localAmount ? parseFloat(localAmount) : null,
       local_currency: useLocalCurrency && localCurrency ? localCurrency.toUpperCase() : null,
-    });
+    };
+
+    let error: any = null;
+    if (editData?.id) {
+      const res = await supabase.from('expenses').update(payload).eq('id', editData.id);
+      error = res.error;
+    } else {
+      const res = await supabase.from('expenses').insert({ ...payload, trip_id: tripId, date: new Date().toISOString() });
+      error = res.error;
+    }
 
     if (error) { Alert.alert('Error', error.message); }
     else {
@@ -153,7 +171,7 @@ function AddExpenseModal({ visible, onClose, tripId, currency, members, currentU
           {/* Header */}
           <View style={am.header}>
             <TouchableOpacity onPress={onClose}><Text style={am.cancel}>Cancel</Text></TouchableOpacity>
-            <Text style={am.title}>Add Expense</Text>
+            <Text style={am.title}>{editData ? "Edit Expense" : "Add Expense"}</Text>
             <TouchableOpacity
               onPress={handleAdd}
               disabled={!canSave}
@@ -341,7 +359,7 @@ function AddExpenseModal({ visible, onClose, tripId, currency, members, currentU
               onPress={handleAdd}
               disabled={!canSave}
             >
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={am.addBtnText}>＋ Add Expense</Text>}
+              {saving ? <ActivityIndicator color="#fff" /> : <Text style={am.addBtnText}>{editData ? "Save Changes" : "＋ Add Expense"}</Text>}
             </TouchableOpacity>
           </View>
         </View>
@@ -470,8 +488,19 @@ export default function BudgetScreen() {
   const [currentUserId, setCurrentUserId] = useState('');
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editExpense, setEditExpense] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState('Overview');
   const statusBarHeight = useStatusBarHeight();
+
+  async function handleDeleteExpense(id: string) {
+    Alert.alert('Delete expense', 'Remove this expense?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await supabase.from('expenses').delete().eq('id', id);
+        setExpenses(prev => prev.filter(e => e.id !== id));
+      }},
+    ]);
+  }
 
   const loadData = useCallback(async (tripId?: string) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -801,7 +830,13 @@ export default function BudgetScreen() {
                         const paidByName = getMemberName(expense.paid_by);
                         const splitCount = expense.split_with?.length ?? 0;
                         return (
-                          <View key={expense.id} style={styles.timelineItem}>
+                          <TouchableOpacity key={expense.id} style={styles.timelineItem} onLongPress={() => {
+                          Alert.alert(expense.title, 'What would you like to do?', [
+                            { text: 'Edit', onPress: () => setEditExpense(expense) },
+                            { text: 'Delete', style: 'destructive', onPress: () => handleDeleteExpense(expense.id) },
+                            { text: 'Cancel', style: 'cancel' },
+                          ]);
+                        }}>
                             <View style={[styles.timelineIcon, { backgroundColor: meta.bg }]}>
                               <Text style={{ fontSize: 16 }}>{meta.emoji}</Text>
                             </View>
@@ -816,8 +851,8 @@ export default function BudgetScreen() {
                                 <Text style={styles.timelinePaidBy}>👤 {paidByName}</Text>
                               )}
                             </View>
-                            <Text style={styles.timelineAmount}>{sym} {Number(expense.amount).toFixed(0)}</Text>
-                          </View>
+                           <Text style={styles.timelineAmount}>{sym} {Number(expense.amount).toFixed(0)}</Text>
+                        </TouchableOpacity>
                         );
                       })}
                     </View>
@@ -907,13 +942,14 @@ export default function BudgetScreen() {
       </ScrollView>
 
       <AddExpenseModal
-        visible={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        visible={showAddModal || !!editExpense}
+        onClose={() => { setShowAddModal(false); setEditExpense(null); }}
         tripId={trip.id}
         currency={currency}
         members={members}
         currentUserId={currentUserId}
         onAdded={() => loadData(route.params?.tripId)}
+        editData={editExpense}
       />
     </SafeAreaView>
   );

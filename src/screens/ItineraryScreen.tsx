@@ -306,6 +306,103 @@ const cj = StyleSheet.create({
   todayBtnText: { fontSize: 14, fontWeight: '700', color: '#2E7D32' },
 });
 
+// ─── Edit Activity Modal ─────────────────────────────────────────────────────
+function EditActivityModal({ visible, activity, onClose, onSaved }: {
+  visible: boolean; activity: any; onClose: () => void; onSaved: () => void;
+}) {
+  const [title, setTitle] = useState(activity.title ?? '');
+  const [category, setCategory] = useState(activity.category ?? 'activity');
+  const [time, setTime] = useState(activity.time?.slice(0,5) ?? '');
+  const [location, setLocation] = useState(activity.location ?? '');
+  const [notes, setNotes] = useState(activity.notes ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const CATEGORIES = [
+    { value: 'activity', emoji: '🎯', label: 'Activity' },
+    { value: 'food', emoji: '🍜', label: 'Food' },
+    { value: 'transport', emoji: '🚗', label: 'Transport' },
+    { value: 'accommodation', emoji: '🏡', label: 'Hotel' },
+    { value: 'flight', emoji: '✈️', label: 'Flight' },
+    { value: 'shopping', emoji: '🛍️', label: 'Shopping' },
+  ];
+
+  async function handleSave() {
+    if (!title.trim()) return;
+    setSaving(true);
+    const { error } = await supabase.from('activities').update({
+      title: title.trim(), category, time: time || null,
+      location: location || null, notes: notes || null,
+    }).eq('id', activity.id);
+    if (error) { Alert.alert('Error', error.message); }
+    else { onSaved(); }
+    setSaving(false);
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={am.overlay}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={am.kvWrapper}>
+          <View style={am.sheet}>
+            <View style={am.header}>
+              <TouchableOpacity onPress={onClose} style={am.cancelBtn}>
+                <Text style={am.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={am.headerTitle}>Edit Activity</Text>
+              <TouchableOpacity
+                onPress={handleSave}
+                disabled={!title.trim() || saving}
+                style={[am.saveBtn, (!title.trim() || saving) && am.saveBtnDisabled]}
+              >
+                {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={am.saveText}>Save</Text>}
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={am.scroll} keyboardShouldPersistTaps="handled">
+              <Text style={am.fieldLabel}>Title</Text>
+              <TextInput style={am.input} value={title} onChangeText={setTitle} placeholder="Activity title" placeholderTextColor="#C0C0C0" />
+
+              <Text style={am.fieldLabel}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                {CATEGORIES.map(cat => (
+                  <TouchableOpacity
+                    key={cat.value}
+                    style={[am.catChip, category === cat.value && am.catChipActive]}
+                    onPress={() => setCategory(cat.value)}
+                  >
+                    <Text style={{ fontSize: 16 }}>{cat.emoji}</Text>
+                    <Text style={[am.catLabel, category === cat.value && { color: '#4CAF50' }]}>{cat.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={am.fieldLabel}>Time <Text style={am.optional}>(optional)</Text></Text>
+              <TextInput style={am.input} value={time} onChangeText={setTime} placeholder="HH:MM" placeholderTextColor="#C0C0C0" keyboardType="numbers-and-punctuation" />
+
+              <Text style={am.fieldLabel}>Location <Text style={am.optional}>(optional)</Text></Text>
+              <TextInput style={am.input} value={location} onChangeText={setLocation} placeholder="e.g. Wat Arun, Bangkok" placeholderTextColor="#C0C0C0" />
+
+              <Text style={am.fieldLabel}>Notes <Text style={am.optional}>(optional)</Text></Text>
+              <TextInput style={[am.input, { height: 80, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} placeholder="Additional details..." placeholderTextColor="#C0C0C0" multiline />
+
+              <View style={{ height: 120 }} />
+            </ScrollView>
+
+            <View style={am.stickyBottom}>
+              <TouchableOpacity
+                style={[am.addBigBtn, (!title.trim() || saving) && am.addBigBtnDisabled]}
+                onPress={handleSave}
+                disabled={!title.trim() || saving}
+              >
+                {saving ? <ActivityIndicator color="#fff" /> : <Text style={am.addBigBtnText}>Save Changes</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Add Activity Modal ───────────────────────────────────────────────────────
 function AddActivityModal({ visible, onClose, tripId, selectedDate, dayNumber, onAdded }: {
   visible: boolean; onClose: () => void; tripId: string;
@@ -521,6 +618,7 @@ export default function ItineraryScreen() {
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editActivity, setEditActivity] = useState<any | null>(null);
   const [showTripSelector, setShowTripSelector] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const statusBarHeight = useStatusBarHeight();
@@ -593,6 +691,16 @@ export default function ItineraryScreen() {
     const [syear, smonth, sday] = trip.start_date.split('-').map(Number);
     const dateObj = new Date(syear, smonth - 1, sday + day - 1);
     setSelectedDate(localDateStr(dateObj));
+  }
+
+  async function handleDeleteActivity(id: string) {
+    Alert.alert('Delete activity', 'Remove this activity?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await supabase.from('activities').delete().eq('id', id);
+        loadActivities();
+      }},
+    ]);
   }
 
   async function toggleActivityStatus(activity: any) {
@@ -718,7 +826,17 @@ export default function ItineraryScreen() {
               const statusBg = STATUS_BG[displayStatus] ?? '#fff';
               return (
                 <View key={activity.id}>
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => toggleActivityStatus(activity)}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => toggleActivityStatus(activity)}
+                    onLongPress={() => {
+                      Alert.alert(activity.title, 'What would you like to do?', [
+                        { text: 'Edit', onPress: () => setEditActivity(activity) },
+                        { text: 'Delete', style: 'destructive', onPress: () => handleDeleteActivity(activity.id) },
+                        { text: 'Cancel', style: 'cancel' },
+                      ]);
+                    }}
+                  >
                     <View style={[styles.activityRow, { backgroundColor: statusBg }]}>
                       <View style={styles.timeCol}>
                         <Text style={styles.time}>{activity.time?.slice(0, 5) ?? '--:--'}</Text>
@@ -759,6 +877,15 @@ export default function ItineraryScreen() {
       </ScrollView>
 
       {/* Modals */}
+      {editActivity && (
+        <EditActivityModal
+          visible={!!editActivity}
+          activity={editActivity}
+          onClose={() => setEditActivity(null)}
+          onSaved={() => { setEditActivity(null); loadActivities(); }}
+        />
+      )}
+
       <AddActivityModal
         visible={showAddModal}
         onClose={() => setShowAddModal(false)}

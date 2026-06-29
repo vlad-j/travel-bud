@@ -131,6 +131,7 @@ export default function AccommodationScreen() {
   const [priceForStay, setPriceForStay] = useState('');
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; uri: string } | null>(null);
+  const [editingAccomId, setEditingAccomId] = useState<string | null>(null);
 
   const [showCheckInDatePicker, setShowCheckInDatePicker] = useState(false);
   const [showCheckInTimePicker, setShowCheckInTimePicker] = useState(false);
@@ -199,8 +200,10 @@ async function handlePickFile() {
     if (!name.trim() || !trip) return;
     setSaving(true);
 
-    const { data, error } = await supabase.from('accommodations').insert({
-      trip_id: trip.id,
+    let data: any = null;
+    let error: any = null;
+
+    const payload = {
       name: name.trim(),
       address: address.trim(),
       check_in: checkInDate ? checkInDate.toISOString() : null,
@@ -208,7 +211,15 @@ async function handlePickFile() {
       booking_reference: bookingRef || null,
       platform: platform,
       price: priceForStay ? parseFloat(priceForStay.replace(/[^0-9.]/g, '')) : null,
-    }).select().single();
+    };
+
+    if (editingAccomId) {
+      const res = await supabase.from('accommodations').update(payload).eq('id', editingAccomId).select().single();
+      data = res.data; error = res.error;
+    } else {
+      const res = await supabase.from('accommodations').insert({ ...payload, trip_id: trip.id }).select().single();
+      data = res.data; error = res.error;
+    }
 
     if (error) { Alert.alert('Error', error.message); setSaving(false); return; }
     setAccommodations((prev) => [...prev, data]);
@@ -282,6 +293,30 @@ async function handlePickFile() {
 
   const goToOverview = () => { setScreen('overview'); resetForm(); };
 
+  async function handleDeleteAccom(id: string) {
+    Alert.alert('Delete accommodation', 'This will also remove linked itinerary events.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await deleteActivitiesBySource(id, 'accommodation');
+        await deleteDocumentsBySource(id, 'accommodation');
+        await supabase.from('accommodations').delete().eq('id', id);
+        setAccommodations(prev => prev.filter(a => a.id !== id));
+      }},
+    ]);
+  }
+
+  function handleEditAccom(acc: any) {
+    setName(acc.name ?? '');
+    setPlatform(acc.platform ?? 'Airbnb');
+    setAddress(acc.address ?? '');
+    setCheckInDate(acc.check_in ? new Date(acc.check_in) : null);
+    setCheckOutDate(acc.check_out ? new Date(acc.check_out) : null);
+    setBookingRef(acc.booking_reference ?? '');
+    setPriceForStay(acc.price ? String(acc.price) : '');
+    setEditingAccomId(acc.id);
+    setScreen('manual1');
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={[]}>
@@ -313,7 +348,14 @@ async function handlePickFile() {
               <Text style={{ fontSize: 13, color: '#888', marginTop: 4 }}>Tap + to add your first stay</Text>
             </View>
           ) : (
-            accommodations.map((acc) => <AccommodationCard key={acc.id} acc={acc} />)
+            accommodations.map((acc) => (
+              <AccommodationCard
+                key={acc.id}
+                acc={acc}
+                onDelete={() => handleDeleteAccom(acc.id)}
+                onEdit={() => handleEditAccom(acc)}
+              />
+            ))
           )}
           <View style={{ height: 24 }} />
         </ScrollView>
@@ -724,7 +766,7 @@ async function handlePickFile() {
   return null;
 }
 
-function AccommodationCard({ acc }: { acc: any }) {
+function AccommodationCard({ acc, onDelete, onEdit }: { acc: any; onDelete: () => void; onEdit: () => void }) {
   const openMaps = () => {
     if (acc.address) Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(acc.address)}`);
   };
@@ -733,7 +775,17 @@ function AccommodationCard({ acc }: { acc: any }) {
   const checkOut = acc.check_out ? new Date(acc.check_out) : null;
 
   return (
-    <View style={cardStyles.card}>
+    <TouchableOpacity
+      style={cardStyles.card}
+      activeOpacity={1}
+      onLongPress={() => {
+        Alert.alert(acc.name, 'What would you like to do?', [
+          { text: 'Edit', onPress: onEdit },
+          { text: 'Delete', style: 'destructive', onPress: onDelete },
+          { text: 'Cancel', style: 'cancel' },
+        ]);
+      }}
+    >
       <View style={cardStyles.heroScene}>
         <View style={cardStyles.sky} />
         <View style={cardStyles.ground} />
@@ -781,7 +833,7 @@ function AccommodationCard({ acc }: { acc: any }) {
           <TouchableOpacity style={cardStyles.downloadBtn}><DownloadIcon size={20} color="#666" /></TouchableOpacity>
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 

@@ -391,6 +391,10 @@ export default function TripSettingsScreen() {
   const [deleting, setDeleting] = useState(false);
 
   const [showNameModal, setShowNameModal] = useState(false);
+  const [destinations, setDestinations] = useState<any[]>([]);
+  const [showAddDest, setShowAddDest] = useState(false);
+  const [newDestName, setNewDestName] = useState('');
+  const [newDestNights, setNewDestNights] = useState('');
   const [showStartDate, setShowStartDate] = useState(false);
   const [showEndDate, setShowEndDate] = useState(false);
   const [showCurrency, setShowCurrency] = useState(false);
@@ -405,6 +409,13 @@ export default function TripSettingsScreen() {
     setCurrentUserId(user?.id ?? null);
     const { data: tripData } = await supabase.from('trips').select('*').eq('id', tripId).single();
     setTrip(tripData);
+    const { data: destsData } = await supabase
+      .from('destinations')
+      .select('*')
+      .eq('trip_id', tripId)
+      .order('order_index', { ascending: true });
+    setDestinations(destsData ?? []);
+
     const { data: membersData } = await supabase
       .from('trip_members')
       .select('*, profiles:user_id(id, name, email)')
@@ -429,6 +440,32 @@ export default function TripSettingsScreen() {
       { text: 'Remove', style: 'destructive', onPress: async () => {
         await supabase.from('trip_members').delete().eq('trip_id', tripId).eq('user_id', userId);
         await loadData();
+      }},
+    ]);
+  }
+
+  async function handleAddDestination() {
+    if (!newDestName.trim() || !tripId) return;
+    const maxIndex = destinations.reduce((max, d) => Math.max(max, d.order_index ?? 0), -1);
+    const { data } = await supabase.from('destinations').insert({
+      trip_id: tripId,
+      name: newDestName.trim(),
+      country: newDestName.trim(),
+      nights: newDestNights ? parseInt(newDestNights) : null,
+      order_index: maxIndex + 1,
+    }).select().single();
+    if (data) setDestinations(prev => [...prev, data]);
+    setNewDestName('');
+    setNewDestNights('');
+    setShowAddDest(false);
+  }
+
+  async function handleDeleteDestination(id: string) {
+    Alert.alert('Delete destination', 'Remove this destination?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await supabase.from('destinations').delete().eq('id', id);
+        setDestinations(prev => prev.filter(d => d.id !== id));
       }},
     ]);
   }
@@ -590,7 +627,7 @@ export default function TripSettingsScreen() {
                     </View>
                     {isOwner ? (
                       <View style={styles.ownerBadge}><Text style={styles.ownerBadgeText}>OWNER</Text></View>
-                 ) : permissions.canRemoveMembers ? (
+                ) : permissions.canRemoveMembers ? (
                       <TouchableOpacity style={styles.removeBtn} onPress={() => handleRemoveMember(m.user_id)}>
                         <Text style={styles.removeBtnText}>Remove</Text>
                       </TouchableOpacity>
@@ -608,6 +645,56 @@ export default function TripSettingsScreen() {
               <View style={styles.addIcon}><Text style={{ fontSize: 20, color: '#4CAF50' }}>＋</Text></View>
               <Text style={styles.addTravelerText}>Invite to travel group</Text>
             </TouchableOpacity>
+          </SectionBlock>
+
+          {/* DESTINATIONS */}
+          <SectionBlock title="DESTINATIONS" headerColor="#E3F2FD" textColor="#0D47A1" icon="📍">
+            {destinations.map((dest, i) => (
+              <View key={dest.id}>
+                <View style={styles.destRow}>
+                  <View style={styles.destNum}><Text style={styles.destNumText}>{i + 1}</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.destName}>{dest.name}</Text>
+                    {dest.nights ? <Text style={styles.destNights}>{dest.nights} nights</Text> : null}
+                  </View>
+                  <TouchableOpacity onPress={() => handleDeleteDestination(dest.id)} style={styles.destDeleteBtn}>
+                    <Text style={{ fontSize: 16, color: '#F44336' }}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                {i < destinations.length - 1 && <View style={styles.divider} />}
+              </View>
+            ))}
+            {showAddDest ? (
+              <View style={styles.addDestForm}>
+                <TextInput
+                  style={styles.addDestInput}
+                  placeholder="City or country"
+                  placeholderTextColor="#C0C0C0"
+                  value={newDestName}
+                  onChangeText={setNewDestName}
+                  autoFocus
+                />
+                <TextInput
+                  style={[styles.addDestInput, { width: 80 }]}
+                  placeholder="Nights"
+                  placeholderTextColor="#C0C0C0"
+                  value={newDestNights}
+                  onChangeText={setNewDestNights}
+                  keyboardType="numeric"
+                />
+                <TouchableOpacity style={styles.addDestSave} onPress={handleAddDestination}>
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>Add</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowAddDest(false)}>
+                  <Text style={{ color: '#888', fontSize: 13 }}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.addTravelerRow} onPress={() => setShowAddDest(true)}>
+                <View style={styles.addIcon}><Text style={{ fontSize: 20, color: '#4CAF50' }}>＋</Text></View>
+                <Text style={styles.addTravelerText}>Add destination</Text>
+              </TouchableOpacity>
+            )}
           </SectionBlock>
 
           {/* ACTIONS */}
@@ -717,4 +804,13 @@ const styles = StyleSheet.create({
   deleteTitle: { fontSize: 15, fontWeight: '700', color: '#F44336' },
   deleteSubtitle: { fontSize: 12, color: '#888', marginTop: 2 },
   footerDecor: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  destRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
+  destNum: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#4CAF50', alignItems: 'center', justifyContent: 'center' },
+  destNumText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  destName: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
+  destNights: { fontSize: 12, color: '#888', marginTop: 2 },
+  destDeleteBtn: { padding: 6 },
+  addDestForm: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingVertical: 10, flexWrap: 'wrap' },
+  addDestInput: { flex: 1, backgroundColor: '#F5F5F5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#1A1A1A', borderWidth: 1, borderColor: '#E0E0E0' },
+  addDestSave: { backgroundColor: '#4CAF50', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 },
 });
