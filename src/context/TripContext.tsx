@@ -102,6 +102,7 @@ const defaultContext: TripContextValue = {
   currentDay: 1,
   currentDestination: null,
   tripDateRange: null,
+  currentUserId: null,
   refreshTripContext: async () => {},
 };
 
@@ -124,6 +125,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const [currentDay, setCurrentDay] = useState<number>(1);
   const [currentDestination, setCurrentDestination] = useState<TripDestination | null>(null);
   const [tripDateRange, setTripDateRange] = useState<TripDateRange | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const hasActiveTrip = currentTripId !== null && currentTripMetadata !== null;
 
@@ -135,6 +137,10 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const loadTripContext = useCallback(async (tripId: string) => {
     setIsTripLoading(true);
     try {
+      // Load current user
+      const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUserId(user?.id ?? null);
+
       // Load trip metadata + currency
       const { data: trip, error: tripError } = await supabase
         .from('trips')
@@ -279,6 +285,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       currentDay,
       currentDestination,
       tripDateRange,
+      currentUserId,
       refreshTripContext,
     }}>
       {children}

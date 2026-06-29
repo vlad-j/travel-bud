@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase';
 import SectionBlock from '../components/SectionBlock';
 import { CURRENCIES } from '../data/staticData';
 import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
+import { useTripPermissions } from '../../hooks/useTripPermissions';
 import { generateTravelBook } from '../lib/TravelBook/generateTravelBook';
 
 const CURRENCY_FLAGS: Record<string, string> = {
@@ -268,17 +269,89 @@ const bmStyles = StyleSheet.create({
   saveText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 });
 
-function InviteModal({ visible, tripCode, onClose }: { visible: boolean; tripCode: string; onClose: () => void }) {
+function InviteModal({ visible, tripId, onClose }: { visible: boolean; tripId: string | null; onClose: () => void }) {
+  const [selectedRole, setSelectedRole] = useState<'editor' | 'owner'>('editor');
+  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+
+  React.useEffect(() => {
+    if (visible) { setGeneratedCode(null); setSelectedRole('editor'); }
+  }, [visible]);
+
+  async function handleGenerate() {
+    if (!tripId) return;
+    setGenerating(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setGenerating(false); return; }
+
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const { error } = await supabase.from('trip_invitations').insert({
+      trip_id: tripId,
+      invite_code: code,
+      role: selectedRole,
+      created_by: user.id,
+      max_uses: 1,
+    });
+
+    if (!error) setGeneratedCode(code);
+    setGenerating(false);
+  }
+
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={invStyles.overlay}>
         <View style={invStyles.box}>
           <Text style={invStyles.title}>🔗 Invite to Travel Group</Text>
-          <Text style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>Share this code with your travel companions:</Text>
-          <View style={invStyles.codeBox}><Text style={invStyles.code}>{tripCode}</Text></View>
-          <TouchableOpacity style={invStyles.shareBtn} onPress={() => Share.share({ message: `Join my trip on Ultimate Travel Buddy! Use code: ${tripCode}` })}>
-            <Text style={invStyles.shareBtnText}>📤 Share Code</Text>
-          </TouchableOpacity>
+
+          {!generatedCode ? (
+            <>
+              <Text style={{ fontSize: 13, color: '#888', marginBottom: 16 }}>Choose the role for this invitation:</Text>
+              <View style={invStyles.roleRow}>
+                <TouchableOpacity
+                  style={[invStyles.roleChip, selectedRole === 'editor' && invStyles.roleChipActive]}
+                  onPress={() => setSelectedRole('editor')}
+                >
+                  <Text style={{ fontSize: 20 }}>✏️</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[invStyles.roleTitle, selectedRole === 'editor' && { color: '#4CAF50' }]}>Editor</Text>
+                    <Text style={invStyles.roleDesc}>Can add and edit content</Text>
+                  </View>
+                  {selectedRole === 'editor' && <Text style={{ color: '#4CAF50', fontWeight: '700' }}>✓</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[invStyles.roleChip, selectedRole === 'owner' && invStyles.roleChipActive]}
+                  onPress={() => setSelectedRole('owner')}
+                >
+                  <Text style={{ fontSize: 20 }}>👑</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[invStyles.roleTitle, selectedRole === 'owner' && { color: '#4CAF50' }]}>Owner</Text>
+                    <Text style={invStyles.roleDesc}>Full control of the trip</Text>
+                  </View>
+                  {selectedRole === 'owner' && <Text style={{ color: '#4CAF50', fontWeight: '700' }}>✓</Text>}
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity style={invStyles.shareBtn} onPress={handleGenerate} disabled={generating}>
+                {generating
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={invStyles.shareBtnText}>Generate invite code</Text>
+                }
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={{ fontSize: 13, color: '#888', marginBottom: 8 }}>
+                Share this {selectedRole === 'owner' ? '👑 Owner' : '✏️ Editor'} code:
+              </Text>
+              <View style={invStyles.codeBox}><Text style={invStyles.code}>{generatedCode}</Text></View>
+              <Text style={{ fontSize: 11, color: '#BBB', marginBottom: 12, textAlign: 'center' }}>
+                Single use · Expires never
+              </Text>
+              <TouchableOpacity style={invStyles.shareBtn} onPress={() => Share.share({ message: `Join my trip on Ultimate Travel Buddy!\nRole: ${selectedRole}\nCode: ${generatedCode}` })}>
+                <Text style={invStyles.shareBtnText}>📤 Share Code</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
           <TouchableOpacity style={invStyles.cancelBtn} onPress={onClose}><Text style={invStyles.cancelText}>Close</Text></TouchableOpacity>
         </View>
       </View>
@@ -290,12 +363,17 @@ const invStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 32 },
   box: { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%' },
   title: { fontSize: 16, fontWeight: '700', color: '#1A1A1A', marginBottom: 8 },
-  codeBox: { backgroundColor: '#E8F5E9', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 16 },
+  codeBox: { backgroundColor: '#E8F5E9', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 8 },
   code: { fontSize: 32, fontWeight: '900', color: '#2E7D32', letterSpacing: 6 },
   shareBtn: { backgroundColor: '#4CAF50', borderRadius: 12, paddingVertical: 13, alignItems: 'center', marginBottom: 8 },
   shareBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
   cancelBtn: { backgroundColor: '#F5F5F5', borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
   cancelText: { fontSize: 14, fontWeight: '600', color: '#666' },
+  roleRow: { gap: 8, marginBottom: 16 },
+  roleChip: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F5F5F5', borderRadius: 12, padding: 12, borderWidth: 1.5, borderColor: '#EBEBEB' },
+  roleChipActive: { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' },
+  roleTitle: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
+  roleDesc: { fontSize: 11, color: '#888', marginTop: 2 },
 });
 
 export default function TripSettingsScreen() {
@@ -303,6 +381,7 @@ export default function TripSettingsScreen() {
   const route = useRoute<any>();
   const tripId = route.params?.tripId;
   const statusBarHeight = useStatusBarHeight();
+  const permissions = useTripPermissions();
 
   const [trip, setTrip] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
@@ -511,11 +590,11 @@ export default function TripSettingsScreen() {
                     </View>
                     {isOwner ? (
                       <View style={styles.ownerBadge}><Text style={styles.ownerBadgeText}>OWNER</Text></View>
-                    ) : (
+                 ) : permissions.canRemoveMembers ? (
                       <TouchableOpacity style={styles.removeBtn} onPress={() => handleRemoveMember(m.user_id)}>
                         <Text style={styles.removeBtnText}>Remove</Text>
                       </TouchableOpacity>
-                    )}
+                    ) : null}
                   </View>
                   {index < members.length - 1 && <View style={styles.divider} />}
                 </View>
@@ -533,7 +612,12 @@ export default function TripSettingsScreen() {
 
           {/* ACTIONS */}
           <SectionBlock title="ACTIONS" headerColor="#A5D6A7" textColor="#1B5E20" icon="⚙️">
-            <SettingsRow icon="🔗" label="Share invite code" tappable onPress={() => setShowInvite(true)} />
+            {permissions.canInviteMembers && (
+              <SettingsRow icon="🔗" label="Share invite code" tappable onPress={() => setShowInvite(true)} />
+            )}
+            {!permissions.canInviteMembers && (
+              <SettingsRow icon="🔗" label="Share invite code" tappable={false} />
+            )}
             <View style={styles.divider} />
             <SettingsRow icon="📤" label="Share trip info" tappable onPress={() => {
               if (!trip) return;
@@ -552,6 +636,7 @@ export default function TripSettingsScreen() {
           </SectionBlock>
 
           {/* DELETE */}
+          {permissions.canDeleteTrip && (
           <TouchableOpacity style={styles.deleteCard} onPress={handleDeleteTrip}>
             <Text style={{ fontSize: 20 }}>🗑️</Text>
             <View style={styles.deleteInfo}>
@@ -560,6 +645,7 @@ export default function TripSettingsScreen() {
             </View>
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
+          )}
 
           <View style={styles.footerDecor}>
             <Dot color="#BBB" size={5} style={{ position: 'relative' }} />
@@ -575,7 +661,7 @@ export default function TripSettingsScreen() {
       <DatePickerModal visible={showEndDate} title="📅 End Date" value={trip?.end_date ?? ''} onSelect={v => updateField('end_date', v)} onClose={() => setShowEndDate(false)} />
       <CurrencyPickerModal visible={showCurrency} selected={trip?.currency ?? 'EUR'} onSelect={v => updateField('currency', v)} onClose={() => setShowCurrency(false)} />
       <BudgetModal visible={showBudget} value={String(trip?.budget ?? '')} onSave={v => updateField('budget', Number(v))} onClose={() => setShowBudget(false)} />
-      <InviteModal visible={showInvite} tripCode={getInviteCode()} onClose={() => setShowInvite(false)} />
+      <InviteModal visible={showInvite} tripId={tripId ?? null} onClose={() => setShowInvite(false)} />
     </SafeAreaView>
   );
 }
