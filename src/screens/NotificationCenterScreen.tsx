@@ -9,6 +9,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Sparkle, Dot } from '../components/TravelDecorations';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 
 interface Notification {
   id: string;
@@ -99,6 +100,7 @@ export default function NotificationCenterScreen() {
     yesterday: NOTIFICATIONS_YESTERDAY,
     earlier: NOTIFICATIONS_EARLIER,
   });
+  const statusBarHeight = useStatusBarHeight();
 
   const unreadCount = notifications.today.filter((n) => !n.read).length;
 
@@ -119,7 +121,7 @@ export default function NotificationCenterScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>

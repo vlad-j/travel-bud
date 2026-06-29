@@ -10,6 +10,7 @@ import { Sparkle, Dot } from '../components/TravelDecorations';
 import { supabase } from '../lib/supabase';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
 import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
+import { useRealtimeSync } from '../../hooks/useRealtimeSync';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CATEGORY_META: Record<string, { emoji: string; color: string; bg: string; label: string }> = {
@@ -515,6 +516,8 @@ export default function BudgetScreen() {
   useFocusEffect(useCallback(() => {
     loadData(currentTripIdRef.current ?? route.params?.tripId);
   }, []));
+
+  useRealtimeSync({ tripId: currentTripIdRef.current, tables: ['expenses'], onChange: () => loadData(currentTripIdRef.current ?? undefined) });
 
   // ─── Calculations ──────────────────────────────────────────────────────────
   const totalBudget = trip?.budget ?? 0;

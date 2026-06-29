@@ -33,12 +33,11 @@ export async function getTodayActivities(tripId: string) {
     .eq('trip_id', tripId)
     .eq('date', today)
     .order('time', { ascending: true });
-console.log('result:', data, 'error:', error);
   if (error) return [];
   return data;
 }
 
-export async function getTripDayNumber(startDate: string): number {
+export async function getTripDayNumber(startDate: string): Promise<number> {
   const start = new Date(startDate);
   const today = new Date();
   const diff = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));

@@ -12,6 +12,7 @@ import { supabase } from '../lib/supabase';
 import { searchLocations } from '../lib/locationService';
 import { currentTripIdRef } from '../context/TripContext';
 import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
+import { useRealtimeSync } from '../../hooks/useRealtimeSync';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MOODS = [
@@ -21,7 +22,7 @@ const MOODS = [
   { value: 'bad', emoji: '😞', label: 'Bad', desc: 'Not the best day...' },
 ];
 
-const FILTER_TABS = ['All', 'Entries', 'Places', 'Photos', 'AI Stories'];
+const FILTER_TABS = ['All', 'Entries', 'Places', 'AI Stories'];
 
 function localDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -70,129 +71,10 @@ async function uploadPhoto(uri: string, userId: string): Promise<string | null> 
   } catch (e) { console.log('Upload exception:', e); return null; }
 }
 
-// ─── Memory of the Day ────────────────────────────────────────────────────────
-function MemoryOfTheDay({ entries }: { entries: any[] }) {
-  const today = getTodayStr();
-  const oneYearAgo = (() => {
-    const d = new Date();
-    d.setFullYear(d.getFullYear() - 1);
-    return localDateStr(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
-  })();
-
-  const memory = entries.find(e => e.date?.startsWith(oneYearAgo));
-  if (!memory) return null;
-
-  const moodData = MOODS.find(m => m.value === memory.mood);
-  const coverPhoto = Array.isArray(memory.photos) ? memory.photos[0] : null;
-
-  return (
-    <View style={mem.wrap}>
-      <View style={mem.header}>
-        <Text style={mem.icon}>✨</Text>
-        <Text style={mem.title}>On this day, one year ago</Text>
-      </View>
-      <View style={mem.card}>
-        {coverPhoto && (
-          <Image source={{ uri: coverPhoto }} style={mem.photo} resizeMode="cover" />
-        )}
-        <View style={mem.body}>
-          <View style={mem.topRow}>
-            {moodData && <Text style={{ fontSize: 16, marginRight: 6 }}>{moodData.emoji}</Text>}
-            <Text style={mem.entryTitle} numberOfLines={1}>{memory.title}</Text>
-          </View>
-          {memory.highlight && (
-            <Text style={mem.highlight} numberOfLines={2}>✨ {memory.highlight}</Text>
-          )}
-          {memory.content && (
-            <Text style={mem.preview} numberOfLines={2}>{memory.content}</Text>
-          )}
-          <Text style={mem.dateStr}>
-            {new Date(oneYearAgo).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-          </Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-const mem = StyleSheet.create({
-  wrap: { marginHorizontal: 16, marginBottom: 12 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  icon: { fontSize: 16 },
-  title: { fontSize: 12, fontWeight: '700', color: '#7C3AED', letterSpacing: 0.5 },
-  card: { backgroundColor: '#F3E8FF', borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: '#C4B5FD' },
-  photo: { width: '100%', height: 120 },
-  body: { padding: 14 },
-  topRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  entryTitle: { fontSize: 15, fontWeight: '800', color: '#4C1D95', flex: 1 },
-  highlight: { fontSize: 12, color: '#6D28D9', marginBottom: 6, lineHeight: 17 },
-  preview: { fontSize: 13, color: '#555', lineHeight: 18, marginBottom: 8 },
-  dateStr: { fontSize: 11, color: '#7C3AED', fontWeight: '600' },
-});
-
-// ─── Journal Stats ─────────────────────────────────────────────────────────────
-function JournalStats({ entries }: { entries: any[] }) {
-  if (entries.length === 0) return null;
-
-  const moodCounts: Record<string, number> = {};
-  for (const e of entries) {
-    if (e.mood) moodCounts[e.mood] = (moodCounts[e.mood] ?? 0) + 1;
-  }
-  const topMood = Object.entries(moodCounts).sort((a, b) => b[1] - a[1])[0];
-  const topMoodData = MOODS.find(m => m.value === topMood?.[0]);
-
-  const allPhotos = entries.flatMap(e => Array.isArray(e.photos) ? e.photos : []);
-  const withHighlight = entries.filter(e => e.highlight).length;
-  const daysWithEntries = new Set(entries.map(e => e.date?.split('T')[0])).size;
-
-  return (
-    <View style={st.wrap}>
-      <Text style={st.title}>📊 TRIP STATS</Text>
-      <View style={st.grid}>
-        <View style={st.card}>
-          <Text style={st.cardEmoji}>📖</Text>
-          <Text style={st.cardValue}>{entries.length}</Text>
-          <Text style={st.cardLabel}>Entries</Text>
-        </View>
-        <View style={st.card}>
-          <Text style={st.cardEmoji}>📅</Text>
-          <Text style={st.cardValue}>{daysWithEntries}</Text>
-          <Text style={st.cardLabel}>Days written</Text>
-        </View>
-        <View style={st.card}>
-          <Text style={st.cardEmoji}>📷</Text>
-          <Text style={st.cardValue}>{allPhotos.length}</Text>
-          <Text style={st.cardLabel}>Photos</Text>
-        </View>
-        <View style={st.card}>
-          <Text style={st.cardEmoji}>{topMoodData?.emoji ?? '😊'}</Text>
-          <Text style={st.cardValue}>{topMoodData?.label ?? '—'}</Text>
-          <Text style={st.cardLabel}>Top mood</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-const st = StyleSheet.create({
-  wrap: { marginHorizontal: 16, marginBottom: 8 },
-  title: { fontSize: 11, fontWeight: '700', color: '#888', letterSpacing: 0.8, marginBottom: 10 },
-  grid: { flexDirection: 'row', gap: 8 },
-  card: { flex: 1, backgroundColor: '#fff', borderRadius: 14, padding: 12, alignItems: 'center', gap: 4, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
-  cardEmoji: { fontSize: 20 },
-  cardValue: { fontSize: 15, fontWeight: '900', color: '#1A1A1A' },
-  cardLabel: { fontSize: 9, color: '#888', fontWeight: '600', textAlign: 'center' },
-});
-
 // ─── Mood Timeline ────────────────────────────────────────────────────────────
 function MoodTimeline({ entries }: { entries: any[] }) {
   const moodEntries = entries.filter(e => e.mood && e.date).slice(0, 14).reverse();
   if (moodEntries.length === 0) return null;
-
-  const moodCounts: Record<string, number> = {};
-  for (const e of moodEntries) {
-    if (e.mood) moodCounts[e.mood] = (moodCounts[e.mood] ?? 0) + 1;
-  }
 
   return (
     <View style={mt.wrap}>
@@ -218,20 +100,6 @@ function MoodTimeline({ entries }: { entries: any[] }) {
             );
           })}
         </ScrollView>
-
-        {/* Mood summary bar */}
-        <View style={mt.summaryRow}>
-          {MOODS.map(m => {
-            const count = moodCounts[m.value] ?? 0;
-            if (count === 0) return null;
-            return (
-              <View key={m.value} style={mt.summaryItem}>
-                <Text style={{ fontSize: 14 }}>{m.emoji}</Text>
-                <Text style={mt.summaryCount}>{count}x</Text>
-              </View>
-            );
-          })}
-        </View>
       </View>
     </View>
   );
@@ -247,56 +115,6 @@ const mt = StyleSheet.create({
   emojiWrapToday: { backgroundColor: '#E8F5E9', borderWidth: 2, borderColor: '#4CAF50' },
   itemDay: { fontSize: 12, color: '#555', fontWeight: '700' },
   itemMonth: { fontSize: 9, color: '#BBB', fontWeight: '600' },
-  summaryRow: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F5F5F5' },
-  summaryItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  summaryCount: { fontSize: 12, fontWeight: '700', color: '#888' },
-});
-
-// ─── Photo Gallery ────────────────────────────────────────────────────────────
-function PhotoGallery({ entries }: { entries: any[] }) {
-  const allPhotos = entries.flatMap(e =>
-    (Array.isArray(e.photos) ? e.photos : []).map((url: string) => ({
-      url,
-      title: e.title,
-      date: e.date?.split('T')[0] ?? '',
-    }))
-  );
-
-  if (allPhotos.length === 0) {
-    return (
-      <View style={{ alignItems: 'center', paddingVertical: 60 }}>
-        <Text style={{ fontSize: 48, marginBottom: 12 }}>📷</Text>
-        <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A' }}>No photos yet</Text>
-        <Text style={{ fontSize: 13, color: '#888', marginTop: 4 }}>Add photos to your journal entries</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={pg.wrap}>
-      <Text style={pg.count}>{allPhotos.length} photos from your trip</Text>
-      <View style={pg.grid}>
-        {allPhotos.map((p, i) => (
-          <View key={i} style={pg.item}>
-            <Image source={{ uri: p.url }} style={pg.photo} resizeMode="cover" />
-            <View style={pg.overlay}>
-              <Text style={pg.photoLabel} numberOfLines={1}>{p.title}</Text>
-            </View>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-const pg = StyleSheet.create({
-  wrap: { marginHorizontal: 16, marginTop: 8 },
-  count: { fontSize: 12, fontWeight: '700', color: '#888', letterSpacing: 0.5, marginBottom: 12 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
-  item: { width: '32.5%', aspectRatio: 1, borderRadius: 12, overflow: 'hidden', position: 'relative' },
-  photo: { width: '100%', height: '100%' },
-  overlay: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.4)', padding: 6 },
-  photoLabel: { fontSize: 9, color: '#fff', fontWeight: '600' },
 });
 
 // ─── Journal Card ─────────────────────────────────────────────────────────────
@@ -311,6 +129,7 @@ function JournalCard({ entry, onEdit, onDelete }: { entry: any; onEdit: () => vo
       {coverPhoto ? (
         <Image source={{ uri: coverPhoto }} style={jc.coverPhoto} resizeMode="cover" />
       ) : null}
+
       <View style={jc.cardBody}>
         <View style={jc.topRow}>
           <View style={jc.titleWrap}>
@@ -319,14 +138,22 @@ function JournalCard({ entry, onEdit, onDelete }: { entry: any; onEdit: () => vo
           </View>
           <Text style={jc.cardTime}>{time}</Text>
         </View>
-        {entry.location ? <Text style={jc.cardLocation}>📍 {entry.location}</Text> : null}
+
+        {entry.location ? (
+          <Text style={jc.cardLocation}>📍 {entry.location}</Text>
+        ) : null}
+
         {entry.highlight ? (
           <View style={jc.highlightWrap}>
             <Text style={jc.highlightIcon}>✨</Text>
             <Text style={jc.highlightText} numberOfLines={2}>{entry.highlight}</Text>
           </View>
         ) : null}
-        {entry.content ? <Text style={jc.contentPreview} numberOfLines={2}>{entry.content}</Text> : null}
+
+        {entry.content ? (
+          <Text style={jc.contentPreview} numberOfLines={2}>{entry.content}</Text>
+        ) : null}
+
         <View style={jc.footer}>
           {entry.favorite_meal ? (
             <View style={jc.footerTag}>
@@ -348,6 +175,7 @@ function JournalCard({ entry, onEdit, onDelete }: { entry: any; onEdit: () => vo
           ) : null}
         </View>
       </View>
+
       <Modal visible={menuVisible} transparent animationType="fade">
         <Pressable style={jc.menuOverlay} onPress={() => setMenuVisible(false)}>
           <View style={jc.menuSheet}>
@@ -396,8 +224,13 @@ const jc = StyleSheet.create({
 
 // ─── Entry Modal ──────────────────────────────────────────────────────────────
 function EntryModal({ visible, onClose, trips, activities, todayExpenses, editEntry, onSaved }: {
-  visible: boolean; onClose: () => void; trips: any[]; activities: any[];
-  todayExpenses: any[]; editEntry: any | null; onSaved: () => void;
+  visible: boolean;
+  onClose: () => void;
+  trips: any[];
+  activities: any[];
+  todayExpenses: any[];
+  editEntry: any | null;
+  onSaved: () => void;
 }) {
   const isEdit = !!editEntry;
   const [title, setTitle] = useState('');
@@ -412,6 +245,7 @@ function EntryModal({ visible, onClose, trips, activities, todayExpenses, editEn
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  
 
   const currentTrip = trips.find(t => t.id === currentTripIdRef.current) ?? trips[0];
 
@@ -569,6 +403,7 @@ function EntryModal({ visible, onClose, trips, activities, todayExpenses, editEn
             )}
 
             <ScrollView style={em.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
               <Text style={em.fieldLabel}>📷 Photos</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={em.photoScroll}>
                 <TouchableOpacity style={em.addPhotoBtn} onPress={handlePickPhotos}>
@@ -773,6 +608,7 @@ export default function JournalScreen() {
   const statusBarHeight = useStatusBarHeight();
 
   useFocusEffect(useCallback(() => { loadData(); }, []));
+  useRealtimeSync({ tripId: currentTripIdRef.current, tables: ['journal_entries'], onChange: loadData });
 
   async function loadData() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -826,7 +662,6 @@ export default function JournalScreen() {
     .filter(e => {
       if (activeFilter === 'Entries') return e.content?.length > 0;
       if (activeFilter === 'Places') return e.location?.length > 0;
-      if (activeFilter === 'Photos') return Array.isArray(e.photos) && e.photos.length > 0;
       if (activeFilter === 'AI Stories') return e.content?.length > 100;
       return true;
     })
@@ -903,55 +738,35 @@ export default function JournalScreen() {
         </View>
       ) : (
         <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+          {entries.length > 0 && <MoodTimeline entries={entries} />}
 
-          {/* Memory of the Day */}
-          <MemoryOfTheDay entries={entries} />
-
-          {/* Stats */}
-          {entries.length > 0 && activeFilter === 'All' && (
-            <JournalStats entries={entries} />
-          )}
-
-          {/* Mood Timeline */}
-          {entries.length > 0 && (activeFilter === 'All' || activeFilter === 'Entries') && (
-            <MoodTimeline entries={entries} />
-          )}
-
-          {/* Photo Gallery tab */}
-          {activeFilter === 'Photos' && (
-            <PhotoGallery entries={entries} />
-          )}
-
-          {/* Entries list */}
-          {activeFilter !== 'Photos' && (
-            filtered.length === 0 ? (
-              <View style={{ alignItems: 'center', paddingVertical: 60 }}>
-                <Text style={{ fontSize: 48, marginBottom: 12 }}>📖</Text>
-                <Text style={{ fontSize: 18, fontWeight: '800', color: '#1A1A1A' }}>No entries yet</Text>
-                <Text style={{ color: '#888', marginTop: 4, marginBottom: 20 }}>Start writing your travel diary</Text>
-                <TouchableOpacity style={styles.emptyBtn} onPress={handleAdd}>
-                  <Text style={styles.emptyBtnText}>✏️ Write first entry</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              sortedDates.map(dateKey => (
-                <View key={dateKey} style={styles.dayGroup}>
-                  <View style={styles.dayHeader}>
-                    <Text style={styles.dayLabel}>{formatDateLabel(dateKey)}</Text>
-                    <View style={styles.dayLine} />
-                    <Text style={styles.dayCount}>{grouped[dateKey].length}</Text>
-                  </View>
-                  {grouped[dateKey].map(entry => (
-                    <JournalCard
-                      key={entry.id}
-                      entry={entry}
-                      onEdit={() => handleEdit(entry)}
-                      onDelete={() => handleDelete(entry.id)}
-                    />
-                  ))}
+          {filtered.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+              <Text style={{ fontSize: 48, marginBottom: 12 }}>📖</Text>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: '#1A1A1A' }}>No entries yet</Text>
+              <Text style={{ color: '#888', marginTop: 4, marginBottom: 20 }}>Start writing your travel diary</Text>
+              <TouchableOpacity style={styles.emptyBtn} onPress={handleAdd}>
+                <Text style={styles.emptyBtnText}>✏️ Write first entry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            sortedDates.map(dateKey => (
+              <View key={dateKey} style={styles.dayGroup}>
+                <View style={styles.dayHeader}>
+                  <Text style={styles.dayLabel}>{formatDateLabel(dateKey)}</Text>
+                  <View style={styles.dayLine} />
+                  <Text style={styles.dayCount}>{grouped[dateKey].length}</Text>
                 </View>
-              ))
-            )
+                {grouped[dateKey].map(entry => (
+                  <JournalCard
+                    key={entry.id}
+                    entry={entry}
+                    onEdit={() => handleEdit(entry)}
+                    onDelete={() => handleDelete(entry.id)}
+                  />
+                ))}
+              </View>
+            ))
           )}
 
           <View style={styles.footerDecor}>

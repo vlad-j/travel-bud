@@ -19,6 +19,7 @@ import { getDestinationHero } from '../lib/destinationHero';
 import { evaluateContextCard } from '../lib/contextCardProvider';
 import type { ContextCardInput } from '../lib/contextCardProvider';
 import { useWeather } from '../../hooks/useWeather';
+import { useRealtimeSync } from '../../hooks/useRealtimeSync';
 
 function WalletEmoji() {
   return <Text style={{ fontSize: 28 }}>👛</Text>;
@@ -121,6 +122,8 @@ export default function HomeScreen() {
   useFocusEffect(useCallback(() => {
     loadData();
   }, []));
+
+  useRealtimeSync({ tripId: currentTripIdRef.current, tables: ['activities', 'expenses'], onChange: loadData });
 
   async function loadData() {
     setLoading(true);

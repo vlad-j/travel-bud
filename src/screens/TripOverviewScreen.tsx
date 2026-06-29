@@ -7,6 +7,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import StatusBadge from '../components/StatusBadge';
 import { Sparkle, Cloud, Dot } from '../components/TravelDecorations';
 import { supabase } from '../lib/supabase';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 
 const DEST_COLORS = ['#E8F5E9', '#FFF3E0', '#E3F2FD', '#F3E5F5', '#FCE4EC', '#E8EAF6'];
 const DEST_EMOJIS: Record<string, string> = {
@@ -46,6 +47,7 @@ export default function TripOverviewScreen() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const statusBarHeight = useStatusBarHeight();
 
   useEffect(() => { loadData(); }, []);
 
@@ -129,7 +131,7 @@ setTrip(tripData);
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <Text style={styles.backIcon}>‹</Text>
           </TouchableOpacity>

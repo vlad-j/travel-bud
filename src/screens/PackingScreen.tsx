@@ -16,6 +16,7 @@ import { MenuSheet } from '../components/BottomSheet';
 import BottomSheet, { SheetButton } from '../components/BottomSheet';
 import { supabase } from '../lib/supabase';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 
 const CATEGORY_ICONS: Record<string, string> = {
   Essentials: '✅',
@@ -41,6 +42,7 @@ export default function PackingScreen() {
   const [newItemName, setNewItemName] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Essentials');
   const [saving, setSaving] = useState(false);
+  const statusBarHeight = useStatusBarHeight();
 
 
   const loadData = React.useCallback(async (tripId?: string) => {
@@ -167,7 +169,7 @@ export default function PackingScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>

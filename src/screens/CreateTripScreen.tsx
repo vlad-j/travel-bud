@@ -17,6 +17,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Sparkle, Dot, Cloud } from '../components/TravelDecorations';
 import { supabase } from '../lib/supabase';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
+
+
 
 const COVER_ILLUSTRATIONS = [
   { id: '1', emoji: '🛕', label: 'Temple', bg: '#FFF3E0' },
@@ -58,6 +61,7 @@ export default function CreateTripScreen() {
   const [currency, setCurrency] = useState('EUR (€)');
   const [selectedCover, setSelectedCover] = useState('1');
   const [saving, setSaving] = useState(false);
+  const statusBarHeight = useStatusBarHeight();
 
   const selectedCoverItem = COVER_ILLUSTRATIONS.find((c) => c.id === selectedCover);
 
@@ -132,7 +136,7 @@ export default function CreateTripScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>

@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { ChevronRight, ChevronLeft } from 'lucide-react-native';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 
 const { width } = Dimensions.get('window');
 
@@ -179,6 +180,7 @@ export default function PrivacyPolicyScreen() {
   const navigation = useNavigation();
   const scrollRef = useRef<ScrollView>(null);
   const sectionRefs = useRef<Record<number, number>>({});
+  const statusBarHeight = useStatusBarHeight();
 
   const scrollToSection = (num: number) => {
     const y = sectionRefs.current[num];
@@ -190,7 +192,7 @@ export default function PrivacyPolicyScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <ChevronLeft size={24} color="#1A1A1A" />
         </TouchableOpacity>

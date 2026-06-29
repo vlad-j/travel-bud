@@ -19,6 +19,7 @@ import { supabase } from '../lib/supabase';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
 import { createActivitiesFromAccommodation, deleteActivitiesBySource, deleteDocumentsBySource } from '../lib/itineraryAutoCreate';
 import { parseBookingPDF, ParsedAccommodation } from '../lib/pdfParser';
+import { useRealtimeSync } from '../../hooks/useRealtimeSync';
 
 const { width } = Dimensions.get('window');
 
@@ -168,6 +169,12 @@ useFocusEffect(
     loadData(currentTripIdRef.current ?? route.params?.tripId);
   }, [])
 );
+
+useRealtimeSync({
+  tripId: currentTripIdRef.current,
+  tables: ['accommodations'],
+  onChange: loadData,
+});
 
 async function handlePickFile() {
   try {

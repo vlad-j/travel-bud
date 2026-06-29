@@ -14,6 +14,7 @@ import BottomSheet, { SheetButton } from '../components/BottomSheet';
 import { Dot, Sparkle } from '../components/TravelDecorations';
 import { createActivityFromTransport, deleteActivitiesBySource, deleteDocumentsBySource } from '../lib/itineraryAutoCreate';
 import SectionBlock from '../components/SectionBlock';
+import { useRealtimeSync } from '../../hooks/useRealtimeSync';
 
 const TRANSPORT_TYPES = ['Train', 'Ferry', 'Bus', 'Taxi', 'Rental Car'];
 
@@ -166,6 +167,7 @@ export default function TransportScreen() {
   const navigation = useNavigation();
 
   useFocusEffect(useCallback(() => { loadData(); }, []));
+  useRealtimeSync({ tripId: currentTripIdRef.current, tables: ['transport'], onChange: loadData });
 
   async function loadData() {
     const tripId = currentTripIdRef.current;

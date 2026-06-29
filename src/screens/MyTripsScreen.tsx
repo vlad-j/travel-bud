@@ -7,6 +7,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Sparkle, Dot, Cloud } from '../components/TravelDecorations';
 import { supabase } from '../lib/supabase';
 import { calculateTripStatus } from '../lib/tripService';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   active: { bg: '#E8F5E9', text: '#4CAF50' },
@@ -31,6 +32,7 @@ export default function MyTripsScreen() {
   const navigation = useNavigation<any>();
   const [trips, setTrips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const statusBarHeight = useStatusBarHeight();
 
   useEffect(() => { loadTrips(); }, []);
 
@@ -67,7 +69,7 @@ export default function MyTripsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>

@@ -24,6 +24,7 @@ import {
 } from '../components/TravelBuddyIcons';
 import { supabase } from '../lib/supabase';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 
 const { width } = Dimensions.get('window');
 
@@ -175,6 +176,7 @@ export default function DocumentsScreen() {
   const [expiryDate, setExpiryDate] = useState<Date | null>(null);
   const [showExpiryPicker, setShowExpiryPicker] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; uri: string } | null>(null);
+  const statusBarHeight = useStatusBarHeight();
 
   const loadData = React.useCallback(async (tripId?: string) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -321,7 +323,7 @@ const { error: uploadError } = await supabase.storage
   if (screen === 'dashboard') {
     return (
       <SafeAreaView style={styles.safe} edges={[]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <ArrowLeftIcon size={24} />
           </TouchableOpacity>
@@ -380,7 +382,7 @@ const { error: uploadError } = await supabase.storage
   if (screen === 'addHub') {
     return (
       <SafeAreaView style={styles.safe} edges={[]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
           <TouchableOpacity style={styles.backBtn} onPress={goToDashboard}>
             <CloseIcon size={22} />
           </TouchableOpacity>
@@ -406,7 +408,7 @@ const { error: uploadError } = await supabase.storage
   if (screen === 'uploadPdf') {
     return (
       <SafeAreaView style={styles.safe} edges={[]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('addHub')}>
             <ArrowLeftIcon size={24} />
           </TouchableOpacity>
@@ -432,7 +434,7 @@ const { error: uploadError } = await supabase.storage
   if (screen === 'emailIntro') {
     return (
       <SafeAreaView style={styles.safe} edges={[]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('addHub')}>
             <ArrowLeftIcon size={24} />
           </TouchableOpacity>
@@ -452,7 +454,7 @@ const { error: uploadError } = await supabase.storage
   if (screen === 'manual') {
     return (
       <SafeAreaView style={styles.safe} edges={[]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('addHub')}>
             <CloseIcon size={22} />
           </TouchableOpacity>
@@ -517,7 +519,7 @@ const { error: uploadError } = await supabase.storage
     const warning = getExpiryWarning(selectedDoc.expires_at ?? '');
     return (
       <SafeAreaView style={styles.safe} edges={[]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
           <TouchableOpacity style={styles.backBtn} onPress={goToDashboard}>
             <ArrowLeftIcon size={24} />
           </TouchableOpacity>

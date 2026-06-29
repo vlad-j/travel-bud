@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
 import { searchLocations } from '../lib/locationService';
 import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
+import { useRealtimeSync } from '../../hooks/useRealtimeSync';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function localDateStr(date: Date): string {
@@ -527,6 +528,8 @@ export default function ItineraryScreen() {
   useFocusEffect(useCallback(() => {
     loadData(currentTripIdRef.current ?? route.params?.tripId);
   }, []));
+
+  useRealtimeSync({ tripId: currentTripIdRef.current, tables: ['activities'], onChange: loadData });
 
   useEffect(() => {
     if (selectedDate && trip) loadActivities();
