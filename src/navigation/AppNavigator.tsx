@@ -29,6 +29,8 @@ import PartnerSyncScreen from '../screens/PartnerSyncScreen';
 import NotificationCenterScreen from '../screens/NotificationCenterScreen';
 import MyTripsScreen from '../screens/MyTripsScreen';
 import JoinTripScreen from '../screens/JoinTripScreen';
+import { useCurrentTrip } from '../context/TripContext';
+import { getDestinationHero } from '../lib/destinationHero';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -45,29 +47,73 @@ const TAB_LABELS = ['Home', 'Itinerary', 'Budget', 'Explore', 'Journal'];
 
 function CustomTabBar({ state, navigation }: any) {
   const insets = useSafeAreaInsets();
+  const { currentDestination } = useCurrentTrip();
+
+  const heroTheme = getDestinationHero(
+    currentDestination?.name,
+    currentDestination?.country,
+  );
+
   return (
-    <View style={[styles.tabBar, { paddingBottom: insets.bottom || 8 }]}>
-      {state.routes.map((route: any, index: number) => {
-        const focused = state.index === index;
-        const icon = TAB_ICONS[route.name];
-        return (
-          <TouchableOpacity
-            key={route.key}
-            style={styles.tabItem}
-            onPress={() => navigation.navigate(route.name)}
-            activeOpacity={0.7}
-          >
-            <Image
-              source={icon}
-              style={[styles.tabIcon, { opacity: focused ? 1 : 0.4 }]}
-              resizeMode="contain"
-            />
-            <Text style={[styles.tabLabel, { color: focused ? '#4CAF50' : '#999' }]}>
-              {TAB_LABELS[index]}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
+    <View
+      style={[
+        styles.tabBarWrap,
+        {
+          paddingBottom: Math.max(insets.bottom, 8),
+        },
+      ]}
+    >
+      <View style={styles.tabBar}>
+        {state.routes.map((route: any, index: number) => {
+          const focused = state.index === index;
+          const icon = TAB_ICONS[route.name];
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              style={styles.tabItem}
+              onPress={() => navigation.navigate(route.name)}
+              activeOpacity={0.82}
+            >
+              <View
+  style={[
+    styles.tabPill,
+    focused && {
+      backgroundColor: heroTheme.pillBg,
+      borderColor: heroTheme.border,
+    },
+  ]}
+>
+                <View style={styles.tabIconWrap}>
+                  <Image
+                    source={icon}
+                    resizeMode="contain"
+                    style={[
+                      styles.tabIcon,
+                      {
+                        opacity: focused ? 1 : 0.88,
+                        transform: [{ scale: focused ? 1.06 : 1 }],
+                      },
+                    ]}
+                  />
+                </View>
+
+                <Text
+                  style={[
+                    styles.tabLabel,
+                    {
+                      color: focused ? heroTheme.text : '#767676',
+                      fontWeight: focused ? '800' : '700',
+                    },
+                  ]}
+                >
+                  {TAB_LABELS[index]}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -160,36 +206,76 @@ export default function AppNavigator() {
 }
 
 const styles = StyleSheet.create({
-tabBar: {
-  flexDirection: 'row',
-  backgroundColor: '#fff',
-  borderTopWidth: 1,
-  borderTopColor: '#F0F0F0',
-  height: 70,
-  shadowColor: '#000',
-  shadowOpacity: 0.08,
-  shadowRadius: 8,
-  shadowOffset: { width: 0, height: -2 },
-  elevation: 8,
+
+
+  tabBarWrap: {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  bottom: 0,
+  paddingHorizontal: 0,
+  backgroundColor: 'transparent',
 },
+
+tabBar: {
+  height: 74,
+  flexDirection: 'row',
+  alignItems: 'stretch',
+  backgroundColor: '#FFFCFA',
+  borderRadius: 24,
+  borderWidth: 1,
+  borderColor: '#F3EFEA',
+  shadowColor: '#000',
+  shadowOpacity: 0.1,
+  shadowRadius: 18,
+  shadowOffset: { width: 0, height: 6 },
+  elevation: 14,
+  paddingVertical: 4,
+  paddingHorizontal: 4,
+},
+
 tabItem: {
   flex: 1,
   alignItems: 'center',
   justifyContent: 'center',
-  paddingTop: 0,
-  paddingBottom: 2,
-  gap: 0,
 },
+
+tabPill: {
+  flex: 1,
+  width: '100%',
+  borderRadius: 18,
+  borderWidth: 1,
+  borderColor: 'transparent',
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+
+tabIconWrap: {
+  height: 40,
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+
 tabIcon: {
-  width: 65,
-  height: 65,
-  marginTop: -6,
+  width: 80,
+  height: 80,
 },
 
 tabLabel: {
   fontSize: 11,
-  fontWeight: '600',
-  marginTop: -10,
+  lineHeight: 13,
+  fontWeight: '700',
+  textAlign: 'center',
+  marginTop: 4,
 },
+
+activeIndicator: {
+  position: 'absolute',
+  bottom: 0,
+  width: 22,
+  height: 4,
+  borderRadius: 999,
+},
+
 
 });

@@ -16,29 +16,15 @@ import { evaluateContextCard } from '../lib/contextCardProvider';
 import type { ContextCardInput } from '../lib/contextCardProvider';
 import { useWeather } from '../../hooks/useWeather';
 import { useRealtimeSync } from '../../hooks/useRealtimeSync';
+import HeroBanner from '../components/home/HeroBanner';
+import TripCarousel from '../components/home/TripCarousel';
+import QuickAccess from '../components/home/QuickAccess';
+import TodayActivities from '../components/home/TodayActivities';
+import BudgetSnapshot from '../components/home/BudgetSnapshot';
+import HomeHeader from '../components/home/HomeHeader';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width - 32;
-
-const ACTIVITY_ICONS: Record<string, { icon: any; bg: string }> = {
-  food:           { icon: require('../../assets/icons/activity_food.png'),          bg: '#FFF3E0' },
-  transport:      { icon: require('../../assets/icons/activity_transport.png'),     bg: '#E3F2FD' },
-  accommodation:  { icon: require('../../assets/icons/activity_accommodation.png'), bg: '#FCE4EC' },
-  activity:       { icon: require('../../assets/icons/activity_activity.png'),      bg: '#E8F5E9' },
-  flight:         { icon: require('../../assets/icons/activity_flight.png'),        bg: '#EDE7F6' },
-  hotel_checkin:  { icon: require('../../assets/icons/activity_accommodation.png'), bg: '#F3E5F5' },
-  hotel_checkout: { icon: require('../../assets/icons/activity_accommodation.png'), bg: '#FFF8E1' },
-  default:        { icon: require('../../assets/icons/activity_activity.png'),      bg: '#F5F5F5' },
-};
-
-const QUICK_PILLS = [
-  { label: 'Packing',       icon: require('../../assets/icons/packing.png'),        screen: 'Packing' as const,       bg: '#F2FAF3', border: '#DDEFE0' },
-  { label: 'Documents',     icon: require('../../assets/icons/documents.png'),      screen: 'Documents' as const,     bg: '#FFF8EB', border: '#F3E0B8' },
-  { label: 'Stays', icon: require('../../assets/icons/accom.png'),          screen: 'Accommodation' as const, bg: '#F8F2FF', border: '#E5D4F6' },
-  { label: 'Transport',     icon: require('../../assets/icons/transportation.png'), screen: 'Transport' as const,     bg: '#F2F8FF', border: '#D6E8F8' },
-  { label: 'Memories',      icon: require('../../assets/icons/memories.png'),       screen: 'MemoriesRecap' as const, bg: '#FFF5EE', border: '#F2D8C8' },
-  { label: 'Settings', icon: require('../../assets/icons/tripSettings.png'),   screen: 'TripSettings' as const,  bg: '#F6F6F6', border: '#E3E3E3' },
-];
 
 function getDayNumber(startDate: string): number {
   const [sy, sm, sd] = startDate.split('-').map(Number);
@@ -57,17 +43,7 @@ function getTotalDays(startDate: string, endDate: string): number {
   return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 }
 
-function getActivityStatus(time: string, status: string): 'DONE' | 'NOW' | 'UPCOMING' {
-  if (status === 'completed') return 'DONE';
-  if (status === 'in_progress') return 'NOW';
-  const now = new Date();
-  const [h, m] = time.split(':').map(Number);
-  const activityMinutes = h * 60 + m;
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  if (activityMinutes < nowMinutes - 30) return 'DONE';
-  if (Math.abs(activityMinutes - nowMinutes) <= 30) return 'NOW';
-  return 'UPCOMING';
-}
+
 
 function getGreeting(name: string): string {
   const hour = new Date().getHours();
@@ -82,14 +58,7 @@ function localDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-const STATUS_BG_ACTIVITY: Record<string, string> = {
-  DONE: '#F1F8E9', NOW: '#FFF8E1', UPCOMING: '#F3E8FF',
-};
-const STATUS_BADGE_COLOR: Record<string, { bg: string; text: string }> = {
-  DONE:     { bg: '#4CAF50', text: '#fff' },
-  NOW:      { bg: '#FF9800', text: '#fff' },
-  UPCOMING: { bg: '#7C3AED', text: '#fff' },
-};
+
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
@@ -244,146 +213,33 @@ export default function HomeScreen() {
       <View style={styles.container}>
 
         {/* ─── HEADER (fixed) ───────────────────────────────────────── */}
-        <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
-          <TouchableOpacity onPress={() => navigation.navigate('ProfileSettings')} activeOpacity={0.8}>
-            <View style={styles.avatar}>
-              <Text style={{ fontSize: 26 }}>👨</Text>
-            </View>
-          </TouchableOpacity>
+       <HomeHeader
+  greeting={getGreeting(userName)}
+  weather={weather}
+  tripCount={trips.length}
+  statusBarHeight={statusBarHeight}
+  heroColor={heroConfig.pillBg}
+  onProfile={() => navigation.navigate('ProfileSettings')}
+  onNotifications={() => navigation.navigate('Notifications')}
+  onTrips={() => navigation.navigate('MyTrips')}
+/>
 
-          <View style={styles.headerCenter}>
-            <Text style={styles.greetingText}>{getGreeting(userName)}</Text>
-            {weather && (
-              <View style={styles.weatherPill}>
-                <Text style={styles.weatherIcon}>{weather.icon}</Text>
-                <Text style={styles.weatherText}>{weather.tempC}°C · {weather.condition}</Text>
-              </View>
-            )}
-          </View>
-
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.iconHeaderBtn}
-              onPress={() => navigation.navigate('Notifications')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.headerActionEmoji}>🔔</Text>
-              <View style={styles.notificationDot} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.iconHeaderBtn}
-              onPress={() => navigation.navigate('MyTrips')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.headerActionEmoji}>🗺️</Text>
-              {trips.length > 0 && (
-                <View style={styles.myTripsBadge}>
-                  <Text style={styles.myTripsBadgeText}>{trips.length}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* ─── HERO + LANDMARK (fixed) ──────────────────────────────── */}
-        <View style={styles.heroArea}>
-          <View style={styles.heroLandmarkArea}>
-            <Text style={styles.heroLandmarkEmoji}>{heroConfig.emoji}</Text>
-          </View>
-        </View>
+<HeroBanner
+  hero={heroConfig}
+  destination={heroDestination?.name}
+/>
 
         {/* ─── TRIP CARDS — horizontal FlatList (NOT inside ScrollView) */}
-        {trips.length === 0 ? (
-          <View style={styles.emptyCarousel}>
-            <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate('CreateTrip')} activeOpacity={0.88}>
-              <View style={styles.tripCardInner}>
-                <View style={[styles.tripAvatar, { backgroundColor: '#E8F5E9' }]}>
-                  <Text style={{ fontSize: 22 }}>✈️</Text>
-                </View>
-                <View style={styles.tripCardLeft}>
-                  <Text style={styles.tripName}>Create a trip</Text>
-                  <Text style={styles.tripDayText}>Plan your next adventure</Text>
-                </View>
-                <Text style={styles.tripChevron}>›</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.emptyBtn, { marginTop: 8 }]} onPress={() => navigation.navigate('JoinTrip')} activeOpacity={0.88}>
-              <View style={styles.tripCardInner}>
-                <View style={[styles.tripAvatar, { backgroundColor: '#E3F2FD' }]}>
-                  <Text style={{ fontSize: 22 }}>🔗</Text>
-                </View>
-                <View style={styles.tripCardLeft}>
-                  <Text style={styles.tripName}>Join a trip</Text>
-                  <Text style={styles.tripDayText}>Enter an invite code</Text>
-                </View>
-                <Text style={styles.tripChevron}>›</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            <View style={styles.tripCarouselShell}>
-              <FlatList
-                ref={flatListRef}
-              data={trips}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={{ paddingHorizontal: 16 }}
-              snapToInterval={CARD_WIDTH}
-              decelerationRate="fast"
-              onMomentumScrollEnd={(e) => {
-                const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
-                onTripChange(index);
-              }}
-              renderItem={({ item }) => {
-                const active = item.computedStatus === 'active';
-                const dest = item.destinations?.[0] ?? null;
-                const dayNum = getDayNumber(item.start_date);
-                const totalD = getTotalDays(item.start_date, item.end_date);
-                return (
-                  <TouchableOpacity
-                    style={[styles.tripCard, { width: CARD_WIDTH }]}
-                    onPress={() => navigation.navigate('TripOverview', { tripId: item.id })}
-                    activeOpacity={0.88}
-                  >
-                    <View style={styles.tripCardInner}>
-                      <View style={styles.tripCardLeft}>
-                        <View style={styles.tripNameRow}>
-                          <Text style={styles.tripName} numberOfLines={1}>{item.name}</Text>
-                          {active && <View style={styles.activeDot} />}
-                        </View>
-                        <View style={styles.tripDayRow}>
-                          <View style={[styles.tripDayDotSmall, { backgroundColor: active ? '#4CAF50' : '#888' }]} />
-                          <Text style={[styles.tripDayText, { color: active ? '#4CAF50' : '#888' }]}>
-                            {active ? `Day ${dayNum} of ${totalD}` : item.computedStatus?.toUpperCase()}
-                          </Text>
-                        </View>
-                        {dest ? (
-                          <View style={styles.tripLocRow}>
-                            <Text style={styles.tripLocPin}>📍</Text>
-                            <Text style={styles.tripLocText} numberOfLines={1}>{dest.name}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      <Text style={styles.tripChevron}>›</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              }}
-              />
-            </View>
-            {trips.length > 1 && (
-              <View style={styles.paginationRow}>
-                {trips.map((_, i) => (
-                  <View key={i} style={[styles.paginationDot, i === currentTripIndex && styles.paginationDotActive]} />
-                ))}
-              </View>
-            )}
-          </>
-        )}
+     <TripCarousel
+  trips={trips}
+  currentTripIndex={currentTripIndex}
+  cardWidth={CARD_WIDTH}
+  flatListRef={flatListRef}
+  onTripChange={onTripChange}
+  onOpenTrip={(tripId) => navigation.navigate('TripOverview', { tripId })}
+  onCreateTrip={() => navigation.navigate('CreateTrip')}
+  onJoinTrip={() => navigation.navigate('JoinTrip')}
+/>
 
         {/* ─── SCROLLABLE CONTENT (vertical ScrollView) ─────────────── */}
         <ScrollView
@@ -403,84 +259,25 @@ export default function HomeScreen() {
           )}
 
           {/* Quick Access Grid */}
-          <View style={styles.quickAccessCard}>
-            <View style={styles.gridWrap}>
-              {QUICK_PILLS.map((pill) => (
-                <TouchableOpacity
-                  key={pill.label}
-                  style={[styles.gridTile, { backgroundColor: pill.bg, borderColor: pill.border }]}
-                  onPress={() => navigation.navigate(pill.screen, { tripId: currentTripIdRef.current })}
-                  activeOpacity={0.78}
-                >
-                  <View style={styles.gridIconCircle}>
-                    <Image source={pill.icon} style={styles.gridIcon} resizeMode="contain" />
-                  </View>
-                  <Text style={styles.gridLabel} numberOfLines={1}>{pill.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+<QuickAccess
+  tripId={currentTripIdRef.current}
+  onNavigate={(screen, params) => navigation.navigate(screen, params)}
+/>
 
-          {/* Today's Activities */}
-          <View style={styles.sectionWrap}>
-            <View style={styles.sectionTopRow}>
-              <Text style={styles.sectionTitle}>✦ TODAY'S ACTIVITIES</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Itinerary')}>
-                <Text style={styles.seeAll}>See all</Text>
-              </TouchableOpacity>
-            </View>
-
-            {activitiesLoading ? (
-              <ActivityIndicator color="#4CAF50" style={{ padding: 20 }} />
-            ) : activities.length === 0 ? (
-              <TouchableOpacity style={styles.emptyActivities} onPress={() => navigation.navigate('Itinerary')} activeOpacity={0.8}>
-                <Text style={styles.emptyActivitiesEmoji}>🌤️</Text>
-                <Text style={styles.emptyActivitiesText}>No activities planned today</Text>
-                <Text style={styles.emptyActivitiesAction}>Tap to add to itinerary →</Text>
-              </TouchableOpacity>
-            ) : (
-              activities.map((activity) => {
-                const status = getActivityStatus(activity.time?.slice(0, 5) ?? '00:00', activity.status ?? 'upcoming');
-                const iconData = ACTIVITY_ICONS[activity.category?.toLowerCase() ?? 'default'] ?? ACTIVITY_ICONS.default;
-                const badgeStyle = STATUS_BADGE_COLOR[status];
-                const cardBg = STATUS_BG_ACTIVITY[status] ?? '#fff';
-                return (
-                  <View key={activity.id} style={[styles.activityCard, { backgroundColor: cardBg }]}>
-                    <View style={[styles.activityIconWrap, { backgroundColor: iconData.bg }]}>
-                      <Image source={iconData.icon} style={styles.activityIcon} resizeMode="contain" />
-                    </View>
-                    <View style={styles.activityContent}>
-                      <Text style={styles.activityTime}>{activity.time?.slice(0, 5) ?? '--:--'}</Text>
-                      <Text style={styles.activityTitle} numberOfLines={1}>{activity.title}</Text>
-                      {activity.location ? <Text style={styles.activityLocation} numberOfLines={1}>{activity.location}</Text> : null}
-                    </View>
-                    <View style={[styles.activityBadge, { backgroundColor: badgeStyle.bg }]}>
-                      <Text style={[styles.activityBadgeText, { color: badgeStyle.text }]}>{status}</Text>
-                    </View>
-                  </View>
-                );
-              })
-            )}
-          </View>
-
+<TodayActivities
+  activities={activities}
+  loading={activitiesLoading}
+  onOpenItinerary={() => navigation.navigate('Itinerary')}
+/>
           {/* Budget Snapshot */}
-          <View style={styles.sectionWrap}>
-            <View style={styles.sectionTopRow}>
-              <Text style={styles.sectionTitle}>✦ BUDGET SNAPSHOT</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Budget')}>
-                <Text style={styles.seeAll}>Details</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.budgetCard}>
-              <BudgetDonut percentage={budgetData.percentUsed} size={110} strokeWidth={13} />
-              <View style={styles.budgetRows}>
-                <BudgetRow label="Total budget" value={`${tripCurrency} ${budgetData.total.toLocaleString()}`} dotColor="#1A1A1A" />
-                <BudgetRow label="Spent so far" value={`${tripCurrency} ${budgetData.spent.toLocaleString()}`} dotColor="#4CAF50" />
-                <BudgetRow label="Today" value={`${tripCurrency} ${budgetData.todaySpending}`} dotColor="#FF9800" />
-              </View>
-              <Text style={styles.walletEmoji}>👛</Text>
-            </View>
-          </View>
+   <BudgetSnapshot
+  currency={tripCurrency}
+  total={budgetData.total}
+  spent={budgetData.spent}
+  today={budgetData.todaySpending}
+  percent={budgetData.percentUsed}
+  onPress={() => navigation.navigate('Budget')}
+/>
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -520,14 +317,60 @@ const styles = StyleSheet.create({
   myTripsBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
 
   // Hero
-  heroArea: { paddingHorizontal: 16, paddingBottom: 0, minHeight: 92, justifyContent: 'flex-end' },
-  heroLandmarkArea: { alignItems: 'flex-end', paddingRight: 14 },
-  heroLandmarkEmoji: { fontSize: 72 },
+  heroArea: { paddingHorizontal: 16, paddingTop: 2, paddingBottom: 0 },
+  heroBackdrop: {
+    height: 136,
+    borderRadius: 30,
+    backgroundColor: '#DFF3EC',
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.10)',
+  },
+  heroBlob: { position: 'absolute', borderRadius: 999, opacity: 0.75 },
+  heroBlobOne: { width: 150, height: 150, backgroundColor: '#FFF3D6', top: -58, left: -34 },
+  heroBlobTwo: { width: 170, height: 170, backgroundColor: '#CFEDE4', right: -54, bottom: -74 },
+  heroCloudLeft: { position: 'absolute', top: 20, left: 28, fontSize: 22, opacity: 0.82 },
+  heroCloudRight: { position: 'absolute', top: 38, right: 98, fontSize: 18, opacity: 0.72 },
+  heroDestinationPill: {
+    position: 'absolute',
+    left: 18,
+    top: 58,
+    maxWidth: '48%',
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  heroDestinationText: { fontSize: 13, fontWeight: '800', color: '#2E7D57' },
+  heroHillBack: {
+    position: 'absolute',
+    left: -24,
+    right: -42,
+    bottom: -34,
+    height: 78,
+    backgroundColor: '#A7DCC3',
+    borderTopLeftRadius: 120,
+    borderTopRightRadius: 140,
+    transform: [{ rotate: '-2deg' }],
+  },
+  heroHillFront: {
+    position: 'absolute',
+    left: 60,
+    right: -18,
+    bottom: -42,
+    height: 82,
+    backgroundColor: '#76C999',
+    borderTopLeftRadius: 120,
+    borderTopRightRadius: 120,
+    transform: [{ rotate: '3deg' }],
+  },
+  heroIllustration: { position: 'absolute', right: -12, bottom: -10, width: 310, height: 145 },
 
   // Trip cards
   emptyCarousel: { paddingHorizontal: 16, marginBottom: 12 },
   emptyBtn: { backgroundColor: '#fff', borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 10, elevation: 4 },
-  tripCarouselShell: { height: 168 },
+  tripCarouselShell: { height: 158, marginTop: -20 },
   tripCard: { height: 148, backgroundColor: '#fff', borderRadius: 24, shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 12, elevation: 6 },
   tripCardInner: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingRight: 18, paddingVertical: 18, paddingLeft: 22, gap: 12 },
   tripAvatarWrap: { alignSelf: 'center' },
@@ -543,7 +386,7 @@ const styles = StyleSheet.create({
   tripLocPin: { fontSize: 13 },
   tripLocText: { fontSize: 15, color: '#666', fontWeight: '500', flex: 1 },
   tripChevron: { fontSize: 26, color: '#CCC', fontWeight: '300' },
-  paginationRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 10, marginBottom: 4, gap: 6 },
+  paginationRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 4, marginBottom: 4, gap: 6 },
   paginationDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CCC' },
   paginationDotActive: { width: 18, backgroundColor: '#4CAF50', borderRadius: 3 },
 
@@ -551,56 +394,6 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   contextCardWrap: { marginHorizontal: 16, marginTop: 12, marginBottom: 4 },
 
-  // Quick access
-  quickAccessCard: {
-    marginHorizontal: 16,
-    marginTop: 10,
-    marginBottom: 14,
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.045,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-
-  // Grid
-  gridWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 8,
-  },
-  gridTile: {
-    width: '31.5%',
-    height: 94,
-    borderRadius: 18,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: 6,
-    paddingBottom: 6,
-  },
-gridIconCircle: {
-  width: 72,
-  height: 64,
-  justifyContent: 'flex-start',
-  alignItems: 'center',
-  marginBottom: -4,
-},
-  gridIcon: {
-    width: 72,
-    height: 72,
-  },
-gridLabel: {
-  marginTop: 0,
-  fontSize: 12,
-  fontWeight: '600',
-  color: '#303030',
-},
 
   // Activities
   sectionWrap: { marginHorizontal: 16, marginBottom: 16 },
@@ -622,11 +415,5 @@ gridLabel: {
   activityBadgeText: { fontSize: 10, fontWeight: '800' },
 
   // Budget
-  budgetCard: { backgroundColor: '#fff', borderRadius: 20, padding: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, elevation: 3, flexDirection: 'row', alignItems: 'center', gap: 16, position: 'relative' },
-  budgetRows: { flex: 1 },
-  walletEmoji: { position: 'absolute', top: 12, right: 16, fontSize: 24 },
-  budgetRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 8 },
-  budgetDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0 },
-  budgetLabel: { fontSize: 11, color: '#888' },
-  budgetValue: { fontSize: 14, fontWeight: '800', color: '#1A1A1A' },
+
 });
