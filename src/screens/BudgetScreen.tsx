@@ -11,16 +11,28 @@ import { supabase } from '../lib/supabase';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
 import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 import { useRealtimeSync } from '../../hooks/useRealtimeSync';
+import { getDestinationHero } from '../lib/destinationHero';
+import AddExpenseModal from '../components/budget/AddExpenseModal';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CATEGORY_META: Record<string, { emoji: string; color: string; bg: string; label: string }> = {
-  food:          { emoji: '🍜', color: '#FF9800', bg: '#FFF8E1', label: 'Food' },
-  transport:     { emoji: '🚗', color: '#2196F3', bg: '#E3F2FD', label: 'Transport' },
-  accommodation: { emoji: '🏨', color: '#9C27B0', bg: '#F3E5F5', label: 'Accommodation' },
-  activity:      { emoji: '🎯', color: '#4CAF50', bg: '#E8F5E9', label: 'Activities' },
-  flight:        { emoji: '✈️', color: '#00BCD4', bg: '#E0F7FA', label: 'Flights' },
-  shopping:      { emoji: '🛍️', color: '#F44336', bg: '#FCE4EC', label: 'Shopping' },
-  other:         { emoji: '📦', color: '#888888', bg: '#F5F5F5', label: 'Other' },
+  food:           { emoji: '🍜', color: '#FF9800', bg: '#FFF8E1', label: 'Food' },
+  coffee:         { emoji: '☕', color: '#795548', bg: '#EFEBE9', label: 'Coffee' },
+  drinks:         { emoji: '🍷', color: '#9C27B0', bg: '#F3E5F5', label: 'Drinks' },
+  groceries:      { emoji: '🛒', color: '#2196F3', bg: '#E3F2FD', label: 'Groceries' },
+  transport:      { emoji: '🚗', color: '#F44336', bg: '#FFEBEE', label: 'Transport' },
+  accommodation:  { emoji: '🏨', color: '#3F51B5', bg: '#E8EAF6', label: 'Accommodation' },
+  activity:       { emoji: '🏃', color: '#4CAF50', bg: '#E8F5E9', label: 'Activities' },
+  attraction:     { emoji: '🗽', color: '#009688', bg: '#E0F2F1', label: 'Attractions' },
+  flight:         { emoji: '✈️', color: '#00BCD4', bg: '#E0F7FA', label: 'Flights' },
+  shopping:       { emoji: '🛍️', color: '#E91E63', bg: '#FCE4EC', label: 'Shopping' },
+  exchange_fees:  { emoji: '💱', color: '#673AB7', bg: '#EDE7F6', label: 'Exchange Fees' },
+  atm_fees:       { emoji: '🏧', color: '#607D8B', bg: '#ECEFF1', label: 'ATM Fees' },
+  laundry:        { emoji: '🧺', color: '#03A9F4', bg: '#E1F5FE', label: 'Laundry' },
+  other_income:   { emoji: '💴', color: '#FF9800', bg: '#FFF3E0', label: 'Other Income' },
+  salary:         { emoji: '🏦', color: '#4CAF50', bg: '#E8F5E9', label: 'Salary' },
+  gifts:          { emoji: '🎁', color: '#9C27B0', bg: '#F3E5F5', label: 'Gifts' },
+  other:          { emoji: '📦', color: '#888888', bg: '#F5F5F5', label: 'Other' },
 };
 
 const EXPENSE_CATEGORIES = Object.entries(CATEGORY_META).map(([label, v]) => ({ label, emoji: v.emoji }));
@@ -52,370 +64,6 @@ async function getExchangeRate(from: string, to: string): Promise<number> {
     return 1;
   }
 }
-
-// ─── Add Expense Modal ────────────────────────────────────────────────────────
-function AddExpenseModal({ visible, onClose, tripId, currency, members, currentUserId, onAdded, editData }: {
-  visible: boolean;
-  onClose: () => void;
-  tripId: string;
-  currency: string;
-  members: any[];
-  currentUserId: string;
-  onAdded: () => void;
-  editData?: any | null;
-}) {
-  const [title, setTitle] = useState('');
-  const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('food');
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  // Paid by
-  const [paidBy, setPaidBy] = useState(currentUserId);
-
-  // Split
-  const [splitWith, setSplitWith] = useState<string[]>([]);
-
-  // Multi-currency
-  const [useLocalCurrency, setUseLocalCurrency] = useState(false);
-  const [localAmount, setLocalAmount] = useState('');
-  const [localCurrency, setLocalCurrency] = useState('');
-  const [convertedAmount, setConvertedAmount] = useState<number | null>(null);
-  const [converting, setConverting] = useState(false);
-
-  useEffect(() => {
-    if (visible) {
-      if (editData) {
-        setTitle(editData.title ?? '');
-        setAmount(String(editData.amount ?? ''));
-        setCategory(editData.category ?? 'food');
-        setNotes(editData.notes ?? '');
-        setPaidBy(editData.paid_by ?? currentUserId);
-        setSplitWith(editData.split_with ?? []);
-      } else {
-        setTitle(''); setAmount(''); setCategory('food'); setNotes('');
-        setPaidBy(currentUserId);
-        setSplitWith([]);
-      }
-      setUseLocalCurrency(false);
-      setLocalAmount('');
-      setLocalCurrency('');
-      setConvertedAmount(null);
-    }
-  }, [visible, currentUserId, editData]);
-
-  async function handleConvert() {
-    if (!localAmount || !localCurrency) return;
-    setConverting(true);
-    const rate = await getExchangeRate(localCurrency.toUpperCase(), currency);
-    const converted = parseFloat(localAmount) * rate;
-    setConvertedAmount(converted);
-    setAmount(converted.toFixed(2));
-    setConverting(false);
-  }
-
-  function toggleSplit(memberId: string) {
-    setSplitWith(prev =>
-      prev.includes(memberId)
-        ? prev.filter(id => id !== memberId)
-        : [...prev, memberId]
-    );
-  }
-
-  async function handleAdd() {
-    if (!title.trim() || !amount) return;
-    setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setSaving(false); return; }
-
-    const payload = {
-      title: title.trim(),
-      amount: parseFloat(amount),
-      currency: currency || 'EUR',
-      category,
-      paid_by: paidBy,
-      notes: notes || null,
-      split_with: splitWith.length > 0 ? splitWith : null,
-      local_amount: useLocalCurrency && localAmount ? parseFloat(localAmount) : null,
-      local_currency: useLocalCurrency && localCurrency ? localCurrency.toUpperCase() : null,
-    };
-
-    let error: any = null;
-    if (editData?.id) {
-      const res = await supabase.from('expenses').update(payload).eq('id', editData.id);
-      error = res.error;
-    } else {
-      const res = await supabase.from('expenses').insert({ ...payload, trip_id: tripId, date: new Date().toISOString() });
-      error = res.error;
-    }
-
-    if (error) { Alert.alert('Error', error.message); }
-    else {
-      setTitle(''); setAmount(''); setCategory('food'); setNotes('');
-      setSplitWith([]); setLocalAmount(''); setLocalCurrency('');
-      setConvertedAmount(null); setUseLocalCurrency(false);
-      onAdded(); onClose();
-    }
-    setSaving(false);
-  }
-
-  const sym = currency || 'EUR';
-  const canSave = title.trim() && amount && !saving;
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={am.overlay}>
-        <View style={am.sheet}>
-          <View style={am.handle} />
-
-          {/* Header */}
-          <View style={am.header}>
-            <TouchableOpacity onPress={onClose}><Text style={am.cancel}>Cancel</Text></TouchableOpacity>
-            <Text style={am.title}>{editData ? "Edit Expense" : "Add Expense"}</Text>
-            <TouchableOpacity
-              onPress={handleAdd}
-              disabled={!canSave}
-              style={[am.saveBtn, !canSave && am.saveBtnDisabled]}
-            >
-              {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={am.saveText}>Save</Text>}
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={am.scroll}>
-
-            {/* Amount */}
-            <View style={am.amountWrap}>
-              <Text style={am.amountCurrency}>{sym}</Text>
-              <TextInput
-                style={am.amountInput}
-                placeholder="0.00"
-                placeholderTextColor="#D0D0D0"
-                value={amount}
-                onChangeText={setAmount}
-                keyboardType="decimal-pad"
-                autoFocus
-              />
-            </View>
-
-            {/* Multi-currency toggle */}
-            <TouchableOpacity
-              style={am.currencyToggle}
-              onPress={() => setUseLocalCurrency(v => !v)}
-            >
-              <Text style={am.currencyToggleText}>
-                {useLocalCurrency ? '💱 Using local currency' : '💱 Paid in local currency?'}
-              </Text>
-            </TouchableOpacity>
-
-            {useLocalCurrency && (
-              <View style={am.localCurrencyWrap}>
-                <View style={am.localRow}>
-                  <TextInput
-                    style={[am.input, { flex: 2 }]}
-                    placeholder="Amount paid"
-                    placeholderTextColor="#C0C0C0"
-                    value={localAmount}
-                    onChangeText={setLocalAmount}
-                    keyboardType="decimal-pad"
-                  />
-                  <TextInput
-                    style={[am.input, { flex: 1 }]}
-                    placeholder="THB"
-                    placeholderTextColor="#C0C0C0"
-                    value={localCurrency}
-                    onChangeText={text => setLocalCurrency(text.toUpperCase())}
-                    autoCapitalize="characters"
-                    maxLength={3}
-                  />
-                  <TouchableOpacity
-                    style={[am.convertBtn, (!localAmount || !localCurrency) && am.convertBtnDisabled]}
-                    onPress={handleConvert}
-                    disabled={!localAmount || !localCurrency || converting}
-                  >
-                    {converting
-                      ? <ActivityIndicator color="#fff" size="small" />
-                      : <Text style={am.convertBtnText}>Convert</Text>
-                    }
-                  </TouchableOpacity>
-                </View>
-                {convertedAmount !== null && (
-                  <Text style={am.convertedText}>
-                    ≈ {sym} {convertedAmount.toFixed(2)}
-                  </Text>
-                )}
-              </View>
-            )}
-
-            {/* Title */}
-            <Text style={am.fieldLabel}>Title</Text>
-            <TextInput
-              style={am.input}
-              placeholder="e.g. Lunch at Warung"
-              placeholderTextColor="#C0C0C0"
-              value={title}
-              onChangeText={setTitle}
-            />
-
-            {/* Category */}
-            <Text style={am.fieldLabel}>Category</Text>
-            <View style={am.catGrid}>
-              {EXPENSE_CATEGORIES.map((opt) => {
-                const meta = CATEGORY_META[opt.label];
-                const active = category === opt.label;
-                return (
-                  <TouchableOpacity
-                    key={opt.label}
-                    style={[am.catChip, active && { backgroundColor: meta.bg, borderColor: meta.color }]}
-                    onPress={() => setCategory(opt.label)}
-                  >
-                    <Text style={{ fontSize: 18 }}>{opt.emoji}</Text>
-                    <Text style={[am.catLabel, active && { color: meta.color }]}>{meta.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Paid by */}
-            {members.length > 1 && (
-              <>
-                <Text style={am.fieldLabel}>Paid by</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={am.memberRow}>
-                  {members.map(m => {
-                    const isSelected = paidBy === m.id;
-                    return (
-                      <TouchableOpacity
-                        key={m.id}
-                        style={[am.memberChip, isSelected && am.memberChipActive]}
-                        onPress={() => setPaidBy(m.id)}
-                      >
-                        <Text style={{ fontSize: 16 }}>👤</Text>
-                        <Text style={[am.memberChipText, isSelected && am.memberChipTextActive]}>
-                          {m.name ?? m.email ?? 'Unknown'}
-                        </Text>
-                        {isSelected && <Text style={{ color: '#4CAF50', fontSize: 12 }}>✓</Text>}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </>
-            )}
-
-            {/* Split with */}
-            {members.length > 1 && (
-              <>
-                <Text style={am.fieldLabel}>Split with</Text>
-                <Text style={am.fieldSub}>Select who shares this expense equally</Text>
-                <View style={am.splitGrid}>
-                  {members.map(m => {
-                    const isSelected = splitWith.includes(m.id);
-                    return (
-                      <TouchableOpacity
-                        key={m.id}
-                        style={[am.splitChip, isSelected && am.splitChipActive]}
-                        onPress={() => toggleSplit(m.id)}
-                      >
-                        <Text style={{ fontSize: 16 }}>👤</Text>
-                        <Text style={[am.splitChipText, isSelected && am.splitChipTextActive]}>
-                          {m.name ?? m.email ?? 'Unknown'}
-                        </Text>
-                        {isSelected && (
-                          <Text style={am.splitAmount}>
-                            {sym} {(parseFloat(amount || '0') / (splitWith.length + 1)).toFixed(0)}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                {splitWith.length > 0 && (
-                  <View style={am.splitSummary}>
-                    <Text style={am.splitSummaryText}>
-                      Split equally between {splitWith.length + 1} people
-                      · {sym} {(parseFloat(amount || '0') / (splitWith.length + 1)).toFixed(2)} each
-                    </Text>
-                  </View>
-                )}
-              </>
-            )}
-
-            {/* Notes */}
-            <Text style={am.fieldLabel}>Notes <Text style={am.optional}>(optional)</Text></Text>
-            <TextInput
-              style={[am.input, am.textArea]}
-              placeholder="Add details..."
-              placeholderTextColor="#C0C0C0"
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-              numberOfLines={2}
-            />
-            <View style={{ height: 24 }} />
-          </ScrollView>
-
-          {/* Sticky bottom button */}
-          <View style={am.stickyBottom}>
-            <TouchableOpacity
-              style={[am.addBtn, !canSave && am.addBtnDisabled]}
-              onPress={handleAdd}
-              disabled={!canSave}
-            >
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={am.addBtnText}>{editData ? "Save Changes" : "＋ Add Expense"}</Text>}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-const am = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '95%' },
-  handle: { width: 36, height: 4, backgroundColor: '#E0E0E0', borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 4 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  title: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
-  cancel: { fontSize: 15, color: '#888', fontWeight: '500' },
-  saveBtn: { backgroundColor: '#4CAF50', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7 },
-  saveBtnDisabled: { backgroundColor: '#C8E6C9' },
-  saveText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  scroll: { flex: 1, paddingHorizontal: 16 },
-  amountWrap: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 20, gap: 4 },
-  amountCurrency: { fontSize: 28, fontWeight: '700', color: '#888', marginTop: 8 },
-  amountInput: { fontSize: 56, fontWeight: '900', color: '#1A1A1A', minWidth: 120, textAlign: 'center' },
-  currencyToggle: { alignSelf: 'center', marginBottom: 12, paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#F0F4FF', borderRadius: 20 },
-  currencyToggleText: { fontSize: 13, fontWeight: '600', color: '#3F51B5' },
-  localCurrencyWrap: { marginBottom: 8 },
-  localRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 6 },
-  convertBtn: { backgroundColor: '#3F51B5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12 },
-  convertBtnDisabled: { backgroundColor: '#C5CAE9' },
-  convertBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
-  convertedText: { fontSize: 14, fontWeight: '700', color: '#4CAF50', textAlign: 'center', marginBottom: 8 },
-  fieldLabel: { fontSize: 12, fontWeight: '700', color: '#888', letterSpacing: 0.5, marginBottom: 6, marginTop: 16 },
-  fieldSub: { fontSize: 11, color: '#BBB', marginBottom: 8, marginTop: -4 },
-  optional: { fontWeight: '400', color: '#BBB' },
-  input: { backgroundColor: '#F5F5F5', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: '#1A1A1A', borderWidth: 1, borderColor: '#EBEBEB' },
-  textArea: { height: 70, textAlignVertical: 'top' },
-  catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  catChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: '#F5F5F5', borderWidth: 1.5, borderColor: '#EBEBEB' },
-  catLabel: { fontSize: 12, fontWeight: '600', color: '#666' },
-  memberRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
-  memberChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F5F5F5', borderWidth: 1.5, borderColor: '#EBEBEB' },
-  memberChipActive: { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' },
-  memberChipText: { fontSize: 13, fontWeight: '600', color: '#666' },
-  memberChipTextActive: { color: '#4CAF50' },
-  splitGrid: { gap: 8 },
-  splitChip: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14, backgroundColor: '#F5F5F5', borderWidth: 1.5, borderColor: '#EBEBEB' },
-  splitChipActive: { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' },
-  splitChipText: { flex: 1, fontSize: 14, fontWeight: '600', color: '#666' },
-  splitChipTextActive: { color: '#4CAF50' },
-  splitAmount: { fontSize: 12, fontWeight: '700', color: '#4CAF50' },
-  splitSummary: { backgroundColor: '#E8F5E9', borderRadius: 10, padding: 10, marginTop: 6 },
-  splitSummaryText: { fontSize: 12, fontWeight: '600', color: '#2E7D32', textAlign: 'center' },
-  stickyBottom: { padding: 16, borderTopWidth: 1, borderTopColor: '#F0F0F0', backgroundColor: '#fff' },
-  addBtn: { backgroundColor: '#4CAF50', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  addBtnDisabled: { backgroundColor: '#C8E6C9' },
-  addBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
-});
 
 // ─── Settlement Calculator ────────────────────────────────────────────────────
 function calculateSettlement(expenses: any[], members: any[], currency: string) {
@@ -483,6 +131,7 @@ export default function BudgetScreen() {
   const route = useRoute<any>();
 
   const [trip, setTrip] = useState<any>(null);
+  const [destinations, setDestinations] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [currentUserId, setCurrentUserId] = useState('');
@@ -525,12 +174,14 @@ export default function BudgetScreen() {
     if (!tripData) { setLoading(false); return; }
     setTrip(tripData);
 
-    const [expensesRes, membersRes] = await Promise.all([
+    const [expensesRes, membersRes, destsRes] = await Promise.all([
       supabase.from('expenses').select('*').eq('trip_id', tripData.id).order('date', { ascending: false }),
       supabase.from('trip_members').select('user_id, role, profiles:user_id(id, name, email)').eq('trip_id', tripData.id),
+      supabase.from('destinations').select('*').eq('trip_id', tripData.id).order('order_index', { ascending: true }),
     ]);
 
     setExpenses(expensesRes.data ?? []);
+    setDestinations(destsRes.data ?? []);
 
     const mappedMembers = (membersRes.data ?? []).map((m: any) => ({
       id: m.user_id,
@@ -617,6 +268,44 @@ export default function BudgetScreen() {
   }
 
   const sym = currency;
+
+  // ─── Destination context for Add Expense card (derived, not new schema) ────
+  const destinationContext = (() => {
+    if (!trip || destinations.length === 0) return null;
+
+    const now = new Date();
+    const todayLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const [sy, sm, sd] = trip.start_date.split('-').map(Number);
+    const startLocal = new Date(sy, sm - 1, sd);
+    const diffDays = Math.round((todayLocal.getTime() - startLocal.getTime()) / (1000 * 60 * 60 * 24));
+    const dayNumber = Math.max(1, diffDays + 1);
+
+    let dayCounter = 0;
+    let destIndex = 0;
+    for (let i = 0; i < destinations.length; i++) {
+      dayCounter += destinations[i]?.nights ?? 1;
+      destIndex = i;
+      if (dayNumber <= dayCounter) break;
+    }
+
+    const dest = destinations[destIndex];
+    const heroTheme = getDestinationHero(dest?.name, dest?.country);
+
+    const [ey, em, ed] = (trip.end_date ?? trip.start_date).split('-').map(Number);
+    const endLocal = new Date(ey, em - 1, ed);
+    const totalTripDays = Math.round((endLocal.getTime() - startLocal.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const isCurrent = diffDays >= 0 && diffDays < totalTripDays;
+
+    return {
+      name: dest?.name ?? 'Destination',
+      country: dest?.country ?? null,
+      dayNumber,
+      totalDays: dayCounter,
+      dateLabel: todayLocal.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }),
+      isCurrent,
+      heroEmoji: '🛕',
+    };
+  })();
 
   if (loading) {
     return (
@@ -950,6 +639,7 @@ export default function BudgetScreen() {
         currentUserId={currentUserId}
         onAdded={() => loadData(route.params?.tripId)}
         editData={editExpense}
+        destinationContext={destinationContext}
       />
     </SafeAreaView>
   );

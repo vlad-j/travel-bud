@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,60 +7,232 @@ import {
   TouchableOpacity,
   Image,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { Sparkle, Cloud, Dot, TravelStamp, DottedLine } from '../components/TravelDecorations';
-import CartoonIcon from '../components/CartoonIcon';
-import StatusBadge from '../components/StatusBadge';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import { Sparkle, Cloud, Dot } from '../components/TravelDecorations';
+import { getDestinationHero } from '../lib/destinationHero';
+import { supabase } from '../lib/supabase';
+import { currentTripIdRef } from '../context/TripContext';
 
 const { width } = Dimensions.get('window');
 
-const PHOTO_GALLERY = [
-  'https://images.pexels.com/photos/2474689/pexels-photo-2474689.jpeg?auto=compress&cs=tinysrgb&w=300',
-  'https://images.pexels.com/photos/3225531/pexels-photo-3225531.jpeg?auto=compress&cs=tinysrgb&w=300',
-  'https://images.pexels.com/photos/2166553/pexels-photo-2166553.jpeg?auto=compress&cs=tinysrgb&w=300',
-  'https://images.pexels.com/photos/1007426/pexels-photo-1007426.jpeg?auto=compress&cs=tinysrgb&w=300',
-  'https://images.pexels.com/photos/3491373/pexels-photo-3491373.jpeg?auto=compress&cs=tinysrgb&w=300',
-  'https://images.pexels.com/photos/1321732/pexels-photo-1321732.jpeg?auto=compress&cs=tinysrgb&w=300',
-];
-
-const BALI_ACCOMMODATIONS = [
-  { id: '1', name: 'Villa Padi Ubud', nights: 4, icon: '🏡', iconBg: '#FCE4EC', status: 'UPCOMING' as const },
-  { id: '2', name: 'Seminyak Beach Resort', nights: 2, icon: '🏨', iconBg: '#E8F5E9', status: 'UPCOMING' as const },
-  { id: '3', name: 'Kuta Hostel Bali', nights: 2, icon: '🏠', iconBg: '#E3F2FD', status: 'UPCOMING' as const },
-];
-
-const PLACES_VISITED = [
-  { id: '1', name: 'Uluwatu Temple', icon: '🛕', iconBg: '#FFF3E0', done: true },
-  { id: '2', name: 'Seminyak Beach', icon: '🏖️', iconBg: '#E3F2FD', done: true },
-  { id: '3', name: 'Ubud Monkey Forest', icon: '🐒', iconBg: '#E8F5E9', done: false },
-  { id: '4', name: 'Tanah Lot Temple', icon: '🌊', iconBg: '#E8F5E9', done: false },
-  { id: '5', name: 'Mount Batur Hike', icon: '🌋', iconBg: '#FCE4EC', done: false },
-];
-
-const UPCOMING_ACTIVITIES = [
-  { id: '1', time: '19:00', title: 'Check-in Villa Padi Ubud', icon: '🏡', iconBg: '#FCE4EC', status: 'UPCOMING' as const },
-  { id: '2', time: '08:00', title: 'Sunrise at Mount Batur', icon: '🌅', iconBg: '#FFF3E0', status: 'UPCOMING' as const },
-  { id: '3', time: '14:00', title: 'Ubud Cooking Class', icon: '🍳', iconBg: '#E8F5E9', status: 'UPCOMING' as const },
-];
-
-const BALI_JOURNAL = [
-  {
-    id: '1',
-    location: 'Uluwatu Temple',
-    note: 'Stunning cliffside temple! 🌊\nThe sunset was absolutely magical.',
-    photoUrl: 'https://images.pexels.com/photos/2474689/pexels-photo-2474689.jpeg?auto=compress&cs=tinysrgb&w=200',
-    emoji: '🛕',
-    time: '17:30',
-  },
-];
-
 const TABS = ['Overview', 'Activities', 'Photos', 'Journal'];
 
+// ─── Status pill ──────────────────────────────────────────────────────────────
+function StatusPill({ status, accent }: { status: string; accent: string }) {
+  const colors: Record<string, { bg: string; text: string }> = {
+    UPCOMING: { bg: `${accent}1A`, text: accent },
+    upcoming: { bg: `${accent}1A`, text: accent },
+    DONE: { bg: '#E8F5E9', text: '#4CAF50' },
+    completed: { bg: '#E8F5E9', text: '#4CAF50' },
+    NOW: { bg: '#FFF3E0', text: '#FF9800' },
+    in_progress: { bg: '#FFF3E0', text: '#FF9800' },
+  };
+  const c = colors[status] ?? colors.UPCOMING;
+  return (
+    <View style={[pillStyles.pill, { backgroundColor: c.bg }]}>
+      <Text style={[pillStyles.pillText, { color: c.text }]}>{status.toUpperCase()}</Text>
+    </View>
+  );
+}
+const pillStyles = StyleSheet.create({
+  pill: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
+  pillText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
+});
+
+// ─── Category → emoji mapping (reused from existing app conventions) ──────────
+const CATEGORY_EMOJI: Record<string, string> = {
+  food: '🍜',
+  transport: '🚗',
+  accommodation: '🏡',
+  activity: '🎯',
+  flight: '✈️',
+  hotel_checkin: '🏨',
+  hotel_checkout: '🧳',
+  shopping: '🛍️',
+  other: '📍',
+};
+
+function getTodayStr(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function formatDateShort(dateStr: string | null): string {
+  if (!dateStr) return '—';
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  } catch { return dateStr; }
+}
+
 export default function DestinationDetailsScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const destinationId = route.params?.destinationId;
+
   const [activeTab, setActiveTab] = useState('Overview');
+  const [loading, setLoading] = useState(true);
+  const [destination, setDestination] = useState<any>(null);
+  const [trip, setTrip] = useState<any>(null);
+  const [accommodations, setAccommodations] = useState<any[]>([]);
+  const [places, setPlaces] = useState<any[]>([]);
+  const [upcomingActivities, setUpcomingActivities] = useState<any[]>([]);
+  const [allActivities, setAllActivities] = useState<any[]>([]);
+  const [journalEntries, setJournalEntries] = useState<any[]>([]);
+  const [totalSpent, setTotalSpent] = useState<number | null>(null);
+  const [usedTripLevelSpent, setUsedTripLevelSpent] = useState(false);
+
+  useFocusEffect(useCallback(() => {
+    loadData();
+  }, [destinationId]));
+
+  async function loadData() {
+    if (!destinationId) { setLoading(false); return; }
+    setLoading(true);
+
+    // 1. Load destination
+    const { data: destData } = await supabase
+      .from('destinations')
+      .select('*')
+      .eq('id', destinationId)
+      .single();
+
+    if (!destData) { setLoading(false); return; }
+    setDestination(destData);
+
+    const tripId = destData.trip_id ?? currentTripIdRef.current;
+
+    // 2. Load trip (for currency, start_date fallback)
+    const { data: tripData } = await supabase
+      .from('trips')
+      .select('id, name, currency, start_date, budget')
+      .eq('id', tripId)
+      .single();
+    setTrip(tripData);
+
+    // 3. Accommodations — match by address containing destination name (no destination_id column on accommodations)
+    const { data: accomData } = await supabase
+      .from('accommodations')
+      .select('*')
+      .eq('trip_id', tripId);
+
+    const matchedAccoms = (accomData ?? []).filter((a: any) =>
+      a.address?.toLowerCase().includes(destData.name?.toLowerCase() ?? '') ||
+      a.name?.toLowerCase().includes(destData.name?.toLowerCase() ?? '')
+    );
+    setAccommodations(matchedAccoms.length > 0 ? matchedAccoms : (accomData ?? []));
+
+    // 4. Activities — destination_id is not reliably populated in this app,
+    //    so we match by location text containing destination name as the closest existing source.
+    const { data: actsData } = await supabase
+      .from('activities')
+      .select('*')
+      .eq('trip_id', tripId)
+      .order('date', { ascending: true })
+      .order('time', { ascending: true });
+
+    const destNameLower = destData.name?.toLowerCase() ?? '';
+    const matchedActs = (actsData ?? []).filter((a: any) =>
+      a.destination_id === destinationId ||
+      (a.location && a.location.toLowerCase().includes(destNameLower))
+    );
+
+    setAllActivities(matchedActs);
+
+    // Places = activities with category 'activity' or no category set — closest existing source for "places"
+    const placesSource = matchedActs.filter((a: any) =>
+      ['activity', 'food', 'shopping'].includes(a.category ?? 'activity')
+    );
+    setPlaces(placesSource);
+
+    // Upcoming = matched activities that are not completed and in the future or today
+    const today = getTodayStr();
+    const upcoming = matchedActs.filter((a: any) =>
+      a.status !== 'completed' && (!a.date || a.date >= today)
+    ).slice(0, 8);
+    setUpcomingActivities(upcoming);
+
+    // 5. Expenses — try matching by location text on expense notes/title, fallback to trip-level total
+    const { data: expData } = await supabase
+      .from('expenses')
+      .select('amount, title, notes, category')
+      .eq('trip_id', tripId);
+
+    const matchedExpenses = (expData ?? []).filter((e: any) =>
+      e.title?.toLowerCase().includes(destNameLower) ||
+      e.notes?.toLowerCase().includes(destNameLower)
+    );
+
+    if (matchedExpenses.length > 0) {
+      setTotalSpent(matchedExpenses.reduce((sum: number, e: any) => sum + Number(e.amount), 0));
+      setUsedTripLevelSpent(false);
+    } else {
+      // Fallback: no destination-level expense data exists, use trip-level total
+      const tripTotal = (expData ?? []).reduce((sum: number, e: any) => sum + Number(e.amount), 0);
+      setTotalSpent(tripTotal);
+      setUsedTripLevelSpent(true);
+    }
+
+    // 6. Journal entries — match by location field containing destination name
+    const { data: journalData } = await supabase
+      .from('journal_entries')
+      .select('*')
+      .eq('trip_id', tripId)
+      .order('date', { ascending: false });
+
+    const matchedJournal = (journalData ?? []).filter((j: any) =>
+      j.location && j.location.toLowerCase().includes(destNameLower)
+    );
+    setJournalEntries(matchedJournal);
+
+    setLoading(false);
+  }
+
+  const destinationName = destination?.name ?? 'Destination';
+  const heroTheme = getDestinationHero(destination?.name, destination?.country);
+  const accent = (heroTheme as any).color ?? (heroTheme as any).accent ?? '#4CAF50';
+  const heroEmoji = (heroTheme as any).emoji ?? '🌍';
+
+  const visitedCount = places.filter((p: any) => p.status === 'completed').length;
+
+  // Photos — derived from journal entries' photos field
+  const allPhotos: string[] = journalEntries.flatMap((j: any) =>
+    Array.isArray(j.photos) ? j.photos : []
+  );
+
+  // Arrival date — derived from destination order/nights chain, fallback to trip start_date
+  const arrivalDate = destination?.arrival_date ?? trip?.start_date ?? null;
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safe} edges={[]}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!destination) {
+    return (
+      <SafeAreaView style={styles.safe} edges={[]}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.backIcon}>‹</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>Destination</Text>
+          <View style={{ width: 36 }} />
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+          <Text style={{ fontSize: 48, marginBottom: 16 }}>📍</Text>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: '#1A1A1A' }}>Destination not found</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
@@ -69,393 +241,431 @@ export default function DestinationDetailsScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Bali</Text>
-        <TouchableOpacity><Text style={{ fontSize: 22 }}>⋯</Text></TouchableOpacity>
+        <Text style={styles.title}>{destinationName}</Text>
+        <TouchableOpacity style={styles.moreBtn}>
+          <Text style={{ fontSize: 20, color: '#888' }}>⋯</Text>
+        </TouchableOpacity>
       </View>
-
-      {/* Hero */}
-      <View style={styles.heroContainer}>
-        <View style={styles.heroScene}>
-          <View style={styles.sky} />
-          <View style={styles.ocean} />
-          <View style={[styles.hill, { left: -10, bottom: 20, backgroundColor: '#66BB6A' }]} />
-          <View style={[styles.hill, { right: -10, bottom: 30, backgroundColor: '#81C784', width: 160, height: 90 }]} />
-          <View style={[styles.hill, { left: '25%', bottom: 10, backgroundColor: '#A5D6A7', width: 130, height: 70 }]} />
-          <View style={styles.centerEmoji}>
-            <Text style={{ fontSize: 72 }}>🌴</Text>
-          </View>
-          <Text style={[styles.decor, { left: 14, bottom: 20 }]}>🌊</Text>
-          <Text style={[styles.decor, { right: 14, bottom: 28 }]}>🛕</Text>
-          <Text style={[styles.decor, { left: 48, top: 18 }]}>☁️</Text>
-          <Text style={[styles.decor, { right: 54, top: 26 }]}>☁️</Text>
-          <Text style={[styles.decor, { right: 18, top: 14 }]}>☀️</Text>
-          <Sparkle color="#FFD700" size={12} style={{ position: 'absolute', left: 36, top: 44 }} />
-          <Sparkle color="#FFD700" size={10} style={{ position: 'absolute', right: 44, bottom: 64 }} />
-          <TravelStamp label="BALI" color="#FF9800" style={{ position: 'absolute', bottom: 16, left: 16, transform: [{ rotate: '-8deg' }] }} />
-        </View>
-      </View>
-
-      {/* Destination info bar */}
-      <View style={styles.infoBar}>
-        <View style={styles.infoItem}>
-          <Text style={styles.infoValue}>8</Text>
-          <Text style={styles.infoLabel}>nights</Text>
-        </View>
-        <View style={styles.infoDivider} />
-        <View style={styles.infoItem}>
-          <Text style={styles.infoValue}>14</Text>
-          <Text style={styles.infoLabel}>activities</Text>
-        </View>
-        <View style={styles.infoDivider} />
-        <View style={styles.infoItem}>
-          <Text style={[styles.infoValue, { color: '#FF9800' }]}>€580</Text>
-          <Text style={styles.infoLabel}>spent</Text>
-        </View>
-        <View style={styles.infoDivider} />
-        <View style={styles.infoItem}>
-          <Text style={styles.infoValue}>May 16</Text>
-          <Text style={styles.infoLabel}>arrival</Text>
-        </View>
-      </View>
-
-      {/* Tabs */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabScroll}
-        contentContainerStyle={styles.tabContent}
-      >
-        {TABS.map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.tab, activeTab === tab && styles.tabActive]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+
+        {/* ─── Hero — destination postcard ───────────────────────────── */}
+        <View style={[styles.heroCard, { backgroundColor: `${accent}14` }]}>
+          <View style={[styles.heroHillBack, { backgroundColor: `${accent}26` }]} />
+          <View style={[styles.heroHillFront, { backgroundColor: `${accent}33` }]} />
+          <Cloud size={22} style={{ position: 'absolute', top: 14, left: 20 }} />
+          <Cloud size={16} style={{ position: 'absolute', top: 26, right: 36 }} />
+          <Sparkle color={accent} size={12} style={{ position: 'absolute', top: 18, right: 18 }} />
+          <Sparkle color={accent} size={9} style={{ position: 'absolute', bottom: 26, left: 26 }} />
+
+          <View style={styles.heroIllustrationWrap}>
+            <Text style={styles.heroEmoji}>{heroEmoji}</Text>
+          </View>
+
+          <View style={[styles.heroBadge, { backgroundColor: accent }]}>
+            <Text style={styles.heroBadgeText}>{destinationName.toUpperCase()}</Text>
+          </View>
+        </View>
+
+        {/* ─── Stats row ──────────────────────────────────────────────── */}
+        <View style={styles.statsCard}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{destination.nights ?? '—'}</Text>
+            <Text style={styles.statLabel}>nights</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{allActivities.length}</Text>
+            <Text style={styles.statLabel}>activities</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { color: accent }]}>
+              {totalSpent !== null ? `${trip?.currency ?? 'EUR'} ${Math.round(totalSpent)}` : '—'}
+            </Text>
+            <Text style={styles.statLabel}>{usedTripLevelSpent ? 'trip spent' : 'spent'}</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{formatDateShort(arrivalDate)}</Text>
+            <Text style={styles.statLabel}>arrival</Text>
+          </View>
+        </View>
+
+        {/* ─── Tabs ───────────────────────────────────────────────────── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabScroll}
+          contentContainerStyle={styles.tabContent}
+        >
+          {TABS.map((tab) => {
+            const active = activeTab === tab;
+            return (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.tab, active && { backgroundColor: accent }]}
+                onPress={() => setActiveTab(tab)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* ─── Overview tab ───────────────────────────────────────────── */}
         {activeTab === 'Overview' && (
           <>
-            {/* Accommodations */}
+            {/* Accommodation */}
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
-                <View style={styles.sectionTitleWrap}>
-                  <Text style={styles.sectionEmoji}>🏨</Text>
-                  <Text style={styles.sectionTitle}>Accommodation</Text>
+                <Text style={styles.sectionTitle}>🏨 Accommodation</Text>
+              </View>
+              {accommodations.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyEmoji}>🏨</Text>
+                  <Text style={styles.emptyTitle}>No accommodation yet</Text>
+                  <Text style={styles.emptySubtitle}>Add a place to stay for {destinationName}</Text>
                 </View>
-              </View>
-              <View style={styles.card}>
-                {BALI_ACCOMMODATIONS.map((acc, index) => (
-                  <View key={acc.id}>
-                    <View style={styles.accRow}>
-                      <CartoonIcon emoji={acc.icon} bg={acc.iconBg} size={44} />
-                      <View style={styles.accInfo}>
-                        <Text style={styles.accName}>{acc.name}</Text>
-                        <Text style={styles.accNights}>{acc.nights} nights</Text>
-                      </View>
-                      <StatusBadge status={acc.status} small />
+              ) : (
+                accommodations.map((acc: any) => (
+                  <TouchableOpacity
+                    key={acc.id}
+                    style={styles.accCard}
+                    activeOpacity={0.8}
+                    onPress={() => navigation.navigate('Accommodation', { tripId: trip?.id })}
+                  >
+                    <View style={[styles.accIconWrap, { backgroundColor: `${accent}1A` }]}>
+                      <Text style={{ fontSize: 26 }}>🏨</Text>
                     </View>
-                    {index < BALI_ACCOMMODATIONS.length - 1 && <View style={styles.divider} />}
-                  </View>
-                ))}
-              </View>
+                    <View style={styles.accInfo}>
+                      <Text style={styles.accName}>{acc.name}</Text>
+                      <Text style={styles.accNights}>
+                        {acc.check_in && acc.check_out
+                          ? `${formatDateShort(acc.check_in.split('T')[0])} – ${formatDateShort(acc.check_out.split('T')[0])}`
+                          : 'Dates not set'}
+                      </Text>
+                    </View>
+                    <StatusPill status="upcoming" accent={accent} />
+                  </TouchableOpacity>
+                ))
+              )}
             </View>
 
-            {/* Places visited */}
+            {/* Places */}
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
-                <View style={styles.sectionTitleWrap}>
-                  <Sparkle color="#FF9800" size={12} style={{ position: 'relative', marginRight: 4 }} />
-                  <Text style={styles.sectionTitle}>Places</Text>
+                <Text style={styles.sectionTitle}>✨ Places</Text>
+                {places.length > 0 && (
+                  <Text style={[styles.sectionCounter, { color: accent }]}>{visitedCount}/{places.length} visited</Text>
+                )}
+              </View>
+              {places.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyEmoji}>📍</Text>
+                  <Text style={styles.emptyTitle}>No places yet</Text>
+                  <Text style={styles.emptySubtitle}>Add activities for {destinationName} to see them here</Text>
                 </View>
-                <Text style={styles.placeCount}>{PLACES_VISITED.filter(p => p.done).length}/{PLACES_VISITED.length} visited</Text>
-              </View>
-              <View style={styles.card}>
-                {PLACES_VISITED.map((place, index) => (
-                  <View key={place.id}>
-                    <View style={styles.placeRow}>
-                      <CartoonIcon emoji={place.icon} bg={place.iconBg} size={40} />
-                      <Text style={[styles.placeName, !place.done && { color: '#888' }]}>{place.name}</Text>
-                      <View style={[styles.placeCheck, place.done && styles.placeCheckDone]}>
-                        {place.done && <Text style={styles.checkMark}>✓</Text>}
+              ) : (
+                places.map((place: any) => {
+                  const done = place.status === 'completed';
+                  return (
+                    <TouchableOpacity key={place.id} style={styles.placeCard} activeOpacity={0.8}>
+                      <View style={[styles.placeIconWrap, done && { backgroundColor: `${accent}1A` }]}>
+                        <Text style={{ fontSize: 24, opacity: done ? 1 : 0.5 }}>
+                          {CATEGORY_EMOJI[place.category ?? 'activity'] ?? '📍'}
+                        </Text>
                       </View>
-                    </View>
-                    {index < PLACES_VISITED.length - 1 && <View style={styles.divider} />}
-                  </View>
-                ))}
-              </View>
+                      <View style={styles.placeInfo}>
+                        <Text style={[styles.placeName, !done && styles.placeNameMuted]}>{place.title}</Text>
+                        <Text style={styles.placeSubtitle}>{place.location ?? destinationName}</Text>
+                      </View>
+                      <View style={[styles.placeCheck, done && { backgroundColor: accent, borderColor: accent }]}>
+                        {done && <Text style={styles.checkMark}>✓</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
             </View>
 
-            {/* Upcoming activities */}
+            {/* Upcoming */}
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
-                <View style={styles.sectionTitleWrap}>
-                  <Cloud size={16} style={{ position: 'relative', marginRight: 4 }} />
-                  <Text style={styles.sectionTitle}>Upcoming</Text>
+                <Text style={styles.sectionTitle}>🗓️ Upcoming</Text>
+              </View>
+              {upcomingActivities.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyEmoji}>🗓️</Text>
+                  <Text style={styles.emptyTitle}>Nothing upcoming</Text>
+                  <Text style={styles.emptySubtitle}>All caught up for {destinationName}</Text>
                 </View>
-              </View>
-              <View style={styles.card}>
-                {UPCOMING_ACTIVITIES.map((act, index) => (
-                  <View key={act.id}>
-                    <View style={styles.actRow}>
-                      <Text style={styles.actTime}>{act.time}</Text>
-                      <CartoonIcon emoji={act.icon} bg={act.iconBg} size={40} />
-                      <Text style={styles.actTitle} numberOfLines={1}>{act.title}</Text>
-                      <StatusBadge status={act.status} small />
+              ) : (
+                <View style={styles.timelineCard}>
+                  {upcomingActivities.map((act: any, index: number) => (
+                    <View key={act.id} style={styles.timelineRow}>
+                      <View style={styles.timelineLeftCol}>
+                        <Text style={styles.timelineTime}>{act.time?.slice(0, 5) ?? '—'}</Text>
+                        {index < upcomingActivities.length - 1 && <View style={styles.timelineLine} />}
+                      </View>
+                      <View style={[styles.timelineIconWrap, { backgroundColor: `${accent}1A` }]}>
+                        <Text style={{ fontSize: 20 }}>{CATEGORY_EMOJI[act.category ?? 'activity'] ?? '📍'}</Text>
+                      </View>
+                      <View style={styles.timelineInfo}>
+                        <Text style={styles.timelineTitle} numberOfLines={1}>{act.title}</Text>
+                        {act.location ? <Text style={styles.timelineLocation}>📍 {act.location}</Text> : null}
+                      </View>
+                      <StatusPill status={act.status ?? 'upcoming'} accent={accent} />
                     </View>
-                    {index < UPCOMING_ACTIVITIES.length - 1 && <View style={styles.divider} />}
-                  </View>
-                ))}
-              </View>
+                  ))}
+                </View>
+              )}
             </View>
           </>
         )}
 
+        {/* ─── Activities tab ─────────────────────────────────────────── */}
+        {activeTab === 'Activities' && (
+          <View style={styles.section}>
+            {allActivities.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyEmoji}>🎯</Text>
+                <Text style={styles.emptyTitle}>No activities yet</Text>
+                <Text style={styles.emptySubtitle}>Add activities for {destinationName}</Text>
+              </View>
+            ) : (
+              <View style={styles.timelineCard}>
+                {allActivities.map((act: any, index: number) => (
+                  <View key={act.id} style={styles.timelineRow}>
+                    <View style={styles.timelineLeftCol}>
+                      <Text style={styles.timelineTime}>{act.time?.slice(0, 5) ?? '—'}</Text>
+                      {index < allActivities.length - 1 && <View style={styles.timelineLine} />}
+                    </View>
+                    <View style={[styles.timelineIconWrap, { backgroundColor: `${accent}1A` }]}>
+                      <Text style={{ fontSize: 20 }}>{CATEGORY_EMOJI[act.category ?? 'activity'] ?? '📍'}</Text>
+                    </View>
+                    <View style={styles.timelineInfo}>
+                      <Text style={styles.timelineTitle} numberOfLines={1}>{act.title}</Text>
+                      {act.location ? <Text style={styles.timelineLocation}>📍 {act.location}</Text> : null}
+                    </View>
+                    <StatusPill status={act.status ?? 'upcoming'} accent={accent} />
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ─── Photos tab ─────────────────────────────────────────────── */}
         {activeTab === 'Photos' && (
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionTitleWrap}>
-                <Text style={styles.sectionEmoji}>📸</Text>
-                <Text style={styles.sectionTitle}>Photo Gallery</Text>
+              <Text style={styles.sectionTitle}>📸 Memories</Text>
+              {allPhotos.length > 0 && <Text style={styles.sectionCounter}>{allPhotos.length} photos</Text>}
+            </View>
+            {allPhotos.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyEmoji}>📷</Text>
+                <Text style={styles.emptyTitle}>No photos yet</Text>
+                <Text style={styles.emptySubtitle}>Photos from your journal will appear here</Text>
               </View>
-              <Text style={styles.photoCount}>{PHOTO_GALLERY.length} photos</Text>
-            </View>
-            <View style={styles.photoGrid}>
-              {PHOTO_GALLERY.map((uri, index) => (
-                <TouchableOpacity key={index} style={styles.photoThumb} activeOpacity={0.85}>
-                  <Image source={{ uri }} style={styles.photoImg} resizeMode="cover" />
-                  {index === 0 && (
-                    <View style={styles.featuredBadge}>
-                      <Text style={styles.featuredText}>⭐ Featured</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
+            ) : (
+              <View style={styles.photoGrid}>
+                {allPhotos.map((uri, index) => (
+                  <TouchableOpacity key={index} style={styles.photoThumb} activeOpacity={0.85}>
+                    <Image source={{ uri }} style={styles.photoImg} resizeMode="cover" />
+                    {index === 0 && (
+                      <View style={styles.featuredBadge}>
+                        <Text style={styles.featuredText}>⭐ Featured</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
         )}
 
+        {/* ─── Journal tab ────────────────────────────────────────────── */}
         {activeTab === 'Journal' && (
           <View style={styles.section}>
-            {BALI_JOURNAL.map((entry) => (
-              <View key={entry.id} style={styles.journalCard}>
-                {entry.photoUrl ? (
-                  <Image source={{ uri: entry.photoUrl }} style={styles.journalPhoto} resizeMode="cover" />
-                ) : null}
-                <View style={styles.journalContent}>
-                  <View style={styles.journalHeader}>
-                    <View style={styles.locationChip}>
-                      <Text style={styles.locationIcon}>📍</Text>
-                      <Text style={styles.locationText}>{entry.location}</Text>
-                    </View>
-                    <Text style={styles.journalTime}>{entry.time}</Text>
-                  </View>
-                  <Text style={styles.journalNote}>{entry.note}</Text>
-                </View>
+            {journalEntries.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyEmoji}>📖</Text>
+                <Text style={styles.emptyTitle}>No journal entries yet</Text>
+                <Text style={styles.emptySubtitle}>Write about your time in {destinationName}</Text>
               </View>
-            ))}
-            <TouchableOpacity style={styles.addButton}>
-              <Text style={styles.addIcon}>＋</Text>
-              <Text style={styles.addText}>Add journal entry</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {activeTab === 'Activities' && (
-          <View style={styles.section}>
-            <View style={styles.card}>
-              {UPCOMING_ACTIVITIES.map((act, index) => (
-                <View key={act.id}>
-                  <View style={styles.actRow}>
-                    <Text style={styles.actTime}>{act.time}</Text>
-                    <CartoonIcon emoji={act.icon} bg={act.iconBg} size={40} />
-                    <Text style={styles.actTitle} numberOfLines={1}>{act.title}</Text>
-                    <StatusBadge status={act.status} small />
+            ) : (
+              journalEntries.map((entry: any) => {
+                const photos = Array.isArray(entry.photos) ? entry.photos : [];
+                return (
+                  <View key={entry.id} style={styles.journalCard}>
+                    {photos[0] ? (
+                      <Image source={{ uri: photos[0] }} style={styles.journalPhoto} resizeMode="cover" />
+                    ) : null}
+                    <View style={styles.journalContent}>
+                      <View style={styles.journalHeader}>
+                        <View style={styles.journalMoodRow}>
+                          {entry.mood ? <Text style={{ fontSize: 20 }}>{moodEmoji(entry.mood)}</Text> : null}
+                          <Text style={styles.journalLocation}>{entry.location}</Text>
+                        </View>
+                        <Text style={styles.journalTime}>
+                          {entry.date ? new Date(entry.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </Text>
+                      </View>
+                      <Text style={styles.journalNote} numberOfLines={3}>{entry.content ?? entry.title ?? ''}</Text>
+                      {photos.length > 0 ? (
+                        <Text style={styles.journalPhotosCount}>📷 {photos.length} photos</Text>
+                      ) : null}
+                    </View>
                   </View>
-                  {index < UPCOMING_ACTIVITIES.length - 1 && <View style={styles.divider} />}
-                </View>
-              ))}
-            </View>
+                );
+              })
+            )}
+            <TouchableOpacity
+              style={[styles.addButton, { borderColor: accent }]}
+              onPress={() => navigation.navigate('JournalMain')}
+            >
+              <Text style={[styles.addIcon, { color: accent }]}>＋</Text>
+              <Text style={[styles.addText, { color: accent }]}>Add journal entry</Text>
+            </TouchableOpacity>
           </View>
         )}
 
         <View style={styles.footerDecor}>
           <Dot color="#DDD" size={5} style={{ position: 'relative' }} />
           <Dot color="#DDD" size={4} style={{ position: 'relative', marginLeft: 8 }} />
-          <Sparkle color="#FF9800" size={10} style={{ position: 'relative', marginLeft: 6 }} />
+          <Sparkle color={accent} size={10} style={{ position: 'relative', marginLeft: 6 }} />
         </View>
-        <View style={{ height: 24 }} />
+        <View style={{ height: 100 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function moodEmoji(mood: string): string {
+  const map: Record<string, string> = {
+    amazing: '😍', good: '😊', normal: '😐', bad: '😞',
+  };
+  return map[mood] ?? '';
+}
+
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F5F5F5' },
+  safe: { flex: 1, backgroundColor: '#FFF8F0' },
+  scroll: { flex: 1 },
+
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#FFF8F0',
   },
-  backBtn: { padding: 4 },
+  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   backIcon: { fontSize: 28, color: '#1A1A1A', fontWeight: '300' },
-  title: { fontSize: 18, fontWeight: '700', color: '#1A1A1A' },
+  title: { fontSize: 19, fontWeight: '800', color: '#1A1A1A' },
+  moreBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
 
-  heroContainer: { height: 200, overflow: 'hidden' },
-  heroScene: { flex: 1, position: 'relative', overflow: 'hidden' },
-  sky: { ...StyleSheet.absoluteFillObject, backgroundColor: '#81D4FA' },
-  ocean: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 50, backgroundColor: '#29B6F6' },
-  hill: { position: 'absolute', width: 140, height: 80, borderRadius: 70 },
-  centerEmoji: { position: 'absolute', bottom: 14, left: 0, right: 0, alignItems: 'center' },
-  decor: { position: 'absolute', fontSize: 26 },
-
-  infoBar: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+  heroCard: {
+    marginHorizontal: 16, marginBottom: 16, height: 200, borderRadius: 28,
+    overflow: 'hidden', position: 'relative', justifyContent: 'flex-end',
   },
-  infoItem: { flex: 1, alignItems: 'center' },
-  infoValue: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
-  infoLabel: { fontSize: 11, color: '#888', marginTop: 2 },
-  infoDivider: { width: 1, backgroundColor: '#F0F0F0' },
+  heroHillBack: { position: 'absolute', bottom: -20, left: -30, width: 200, height: 120, borderRadius: 100 },
+  heroHillFront: { position: 'absolute', bottom: -30, right: -20, width: 220, height: 130, borderRadius: 110 },
+  heroIllustrationWrap: { alignItems: 'center', justifyContent: 'center', flex: 1 },
+  heroEmoji: { fontSize: 84 },
+  heroBadge: { position: 'absolute', bottom: 16, left: 16, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 7, transform: [{ rotate: '-4deg' }] },
+  heroBadgeText: { fontSize: 13, fontWeight: '900', color: '#fff', letterSpacing: 1 },
 
-  tabScroll: { backgroundColor: '#fff', maxHeight: 52 },
-  tabContent: { paddingHorizontal: 16, paddingVertical: 8, gap: 8, flexDirection: 'row' },
-  tab: { paddingHorizontal: 18, paddingVertical: 6, borderRadius: 20, backgroundColor: '#F5F5F5' },
-  tabActive: { backgroundColor: '#4CAF50' },
-  tabText: { fontSize: 14, fontWeight: '600', color: '#666' },
+  statsCard: {
+    flexDirection: 'row', marginHorizontal: 16, marginBottom: 16,
+    backgroundColor: '#fff', borderRadius: 22, paddingVertical: 16,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2,
+  },
+  statItem: { flex: 1, alignItems: 'center' },
+  statValue: { fontSize: 18, fontWeight: '900', color: '#1A1A1A' },
+  statLabel: { fontSize: 11, color: '#888', marginTop: 3, fontWeight: '600' },
+  statDivider: { width: 1, backgroundColor: '#F0F0F0' },
+
+  tabScroll: { maxHeight: 52, marginBottom: 16 },
+  tabContent: { paddingHorizontal: 16, gap: 10, flexDirection: 'row' },
+  tab: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 18, backgroundColor: '#fff' },
+  tabText: { fontSize: 14, fontWeight: '700', color: '#888' },
   tabTextActive: { color: '#fff' },
 
-  scroll: { flex: 1, padding: 16 },
-  section: { marginBottom: 8 },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  sectionTitleWrap: { flexDirection: 'row', alignItems: 'center' },
-  sectionEmoji: { fontSize: 16, marginRight: 6 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1A1A1A' },
-  placeCount: { fontSize: 13, color: '#4CAF50', fontWeight: '600' },
-  photoCount: { fontSize: 13, color: '#888', fontWeight: '600' },
+  section: { marginHorizontal: 16, marginBottom: 20 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
+  sectionCounter: { fontSize: 13, fontWeight: '700', color: '#888' },
 
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+  accCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#fff',
+    borderRadius: 20, padding: 14, marginBottom: 10,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
   },
-  divider: { height: 1, backgroundColor: '#F5F5F5' },
-
-  accRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  accIconWrap: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   accInfo: { flex: 1 },
-  accName: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
-  accNights: { fontSize: 12, color: '#888', marginTop: 2 },
+  accName: { fontSize: 15, fontWeight: '700', color: '#1A1A1A' },
+  accNights: { fontSize: 12, color: '#888', marginTop: 3 },
 
-  placeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
-  placeName: { flex: 1, fontSize: 14, fontWeight: '600', color: '#1A1A1A' },
+  placeCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#fff',
+    borderRadius: 18, padding: 14, marginBottom: 10,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
+  },
+  placeIconWrap: { width: 48, height: 48, borderRadius: 14, backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center' },
+  placeInfo: { flex: 1 },
+  placeName: { fontSize: 15, fontWeight: '700', color: '#1A1A1A' },
+  placeNameMuted: { color: '#999' },
+  placeSubtitle: { fontSize: 12, color: '#888', marginTop: 2 },
   placeCheck: {
-    width: 24, height: 24, borderRadius: 12,
-    borderWidth: 2, borderColor: '#E0E0E0',
+    width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: '#E0E0E0',
     alignItems: 'center', justifyContent: 'center',
   },
-  placeCheckDone: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
-  checkMark: { fontSize: 12, color: '#fff', fontWeight: '800' },
+  checkMark: { fontSize: 13, color: '#fff', fontWeight: '800' },
 
-  actRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  actTime: { width: 44, fontSize: 12, fontWeight: '700', color: '#666' },
-  actTitle: { flex: 1, fontSize: 14, fontWeight: '600', color: '#1A1A1A' },
-
-  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  photoThumb: {
-    width: (width - 48) / 2,
-    height: 120,
-    borderRadius: 14,
-    overflow: 'hidden',
-    position: 'relative',
+  timelineCard: {
+    backgroundColor: '#fff', borderRadius: 22, padding: 14,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, elevation: 1,
   },
+  timelineRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 10 },
+  timelineLeftCol: { width: 44, alignItems: 'center' },
+  timelineTime: { fontSize: 12, fontWeight: '700', color: '#666' },
+  timelineLine: { width: 2, flex: 1, minHeight: 24, backgroundColor: '#F0F0F0', marginTop: 6 },
+  timelineIconWrap: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  timelineInfo: { flex: 1, paddingTop: 2 },
+  timelineTitle: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
+  timelineLocation: { fontSize: 11, color: '#888', marginTop: 3 },
+
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  photoThumb: { width: (width - 42) / 2, height: 140, borderRadius: 20, overflow: 'hidden', position: 'relative' },
   photoImg: { width: '100%', height: '100%' },
-  featuredBadge: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
+  featuredBadge: { position: 'absolute', bottom: 8, left: 8, backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
   featuredText: { fontSize: 11, fontWeight: '700', color: '#1A1A1A' },
 
   journalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: '#fff', borderRadius: 22, marginBottom: 14, overflow: 'hidden',
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2,
   },
-  journalPhoto: { width: '100%', height: 160 },
-  journalContent: { padding: 14 },
-  journalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  locationChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFF8E1',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  locationIcon: { fontSize: 12 },
-  locationText: { fontSize: 13, fontWeight: '700', color: '#1A1A1A' },
+  journalPhoto: { width: '100%', height: 170 },
+  journalContent: { padding: 16 },
+  journalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  journalMoodRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  journalLocation: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
   journalTime: { fontSize: 12, color: '#888' },
-  journalNote: { fontSize: 14, color: '#444', lineHeight: 21 },
+  journalNote: { fontSize: 14, color: '#444', lineHeight: 21, marginBottom: 8 },
+  journalPhotosCount: { fontSize: 12, color: '#888', fontWeight: '600' },
+
+  emptyState: { alignItems: 'center', paddingVertical: 48 },
+  emptyEmoji: { fontSize: 44, marginBottom: 12 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#1A1A1A', marginBottom: 4 },
+  emptySubtitle: { fontSize: 13, color: '#888', textAlign: 'center' },
 
   addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#E0E0E0',
-    borderStyle: 'dashed',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 16, backgroundColor: '#fff', borderRadius: 18,
+    borderWidth: 1.5, borderStyle: 'dashed',
   },
-  addIcon: { fontSize: 20, color: '#4CAF50', fontWeight: '700' },
-  addText: { fontSize: 15, fontWeight: '600', color: '#4CAF50' },
+  addIcon: { fontSize: 20, fontWeight: '700' },
+  addText: { fontSize: 15, fontWeight: '700' },
 
-  footerDecor: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-  },
+  footerDecor: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 16 },
 });

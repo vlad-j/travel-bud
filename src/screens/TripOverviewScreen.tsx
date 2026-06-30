@@ -9,15 +9,22 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import Svg, { Circle, Path } from 'react-native-svg';
-import StatusBadge from '../components/StatusBadge';
 import { supabase } from '../lib/supabase';
 import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 import { getDestinationHero } from '../lib/destinationHero';
+import TripHero from '../components/tripOverview/TripHero';
+import JourneyTimeline, { TimelineItem, TransportMode } from '../components/tripOverview/JourneyTimeline';
+import WhatsNextRow, { WhatsNextItem } from '../components/tripOverview/WhatsNextRow';
+import { JourneyCardData } from '../components/tripOverview/JourneyCard';
 
+// ─── Date helpers (unchanged business logic) ──────────────────────────────────
 function localDate(date: string): Date {
   const [y, m, d] = date.split('-').map(Number);
   return new Date(y, m - 1, d);
+}
+
+function localDateStr(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function getTotalDays(startDate: string, endDate: string): number {
@@ -50,27 +57,10 @@ function getDaysUntilStart(startDate: string): number {
   );
 }
 
-function formatDateRange(startDate: string, endDate: string): string {
-  const start = localDate(startDate).toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-  });
-
-  const end = localDate(endDate).toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-
-  return `${start} → ${end}`;
-}
-
 function getDestinationSummary(destinations: any[]): string {
   if (!destinations || destinations.length === 0) return 'No destinations yet';
-
   const visible = destinations.slice(0, 3).map((d) => d.name).filter(Boolean);
   const remaining = destinations.length - visible.length;
-
   if (remaining > 0) return `${visible.join(' • ')} +${remaining}`;
   return visible.join(' • ');
 }
@@ -80,14 +70,11 @@ function getCurrentDestinationIndex(destinations: any[], currentDay: number): nu
   if (currentDay <= 0) return 0;
 
   let dayCounter = 0;
-
   for (let i = 0; i < destinations.length; i += 1) {
     const nights = destinations[i]?.nights ?? 1;
     dayCounter += nights;
-
     if (currentDay <= dayCounter) return i;
   }
-
   return destinations.length - 1;
 }
 
@@ -96,216 +83,64 @@ function getTripMood(destinations: any[]): string {
     ?.map((d) => `${d?.name ?? ''} ${d?.country ?? ''}`.toLowerCase())
     .join(' ') ?? '';
 
-  if (
-    names.includes('phi phi') ||
-    names.includes('phuket') ||
-    names.includes('krabi') ||
-    names.includes('bali') ||
-    names.includes('island')
-  ) {
+  if (names.includes('phi phi') || names.includes('phuket') || names.includes('krabi') || names.includes('bali') || names.includes('island')) {
     return '🏝 Island journey';
   }
-
-  if (
-    names.includes('bangkok') ||
-    names.includes('chiang mai') ||
-    names.includes('kyoto') ||
-    names.includes('rome') ||
-    names.includes('athens')
-  ) {
+  if (names.includes('bangkok') || names.includes('chiang mai') || names.includes('kyoto') || names.includes('rome') || names.includes('athens')) {
     return '🏯 Culture adventure';
   }
-
-  if (
-    names.includes('bromo') ||
-    names.includes('khao sok') ||
-    names.includes('alps') ||
-    names.includes('fuji') ||
-    names.includes('mount')
-  ) {
+  if (names.includes('bromo') || names.includes('khao sok') || names.includes('alps') || names.includes('fuji') || names.includes('mount')) {
     return '🥾 Nature explorer';
   }
-
   if (destinations?.length >= 4) return '✨ Multi-stop adventure';
-
   return '✨ Travel journey';
 }
 
-function TripRouteMap({
-  count,
-  currentIndex,
-  color,
-}: {
-  count: number;
-  currentIndex: number;
-  color: string;
-}) {
-  const visibleCount = Math.min(Math.max(count, 1), 6);
+// ─── Cumulative destination date calculation ──────────────────────────────────
+function getDestinationDateRange(
+  destinations: any[],
+  index: number,
+  tripStartDate: string,
+): { arrival: string; departure: string } {
+  const dest = destinations[index];
 
-  const points = [
-    { x: 18, y: 30 },
-    { x: 68, y: 30 },
-    { x: 108, y: 62 },
-    { x: 160, y: 62 },
-    { x: 202, y: 28 },
-    { x: 250, y: 28 },
-  ].slice(0, visibleCount);
+  // Prefer explicit fields if present on the destination row
+  if (dest?.start_date && dest?.end_date) {
+    return { arrival: dest.start_date, departure: dest.end_date };
+  }
 
-  const path = points
-    .map((point, index) => {
-      if (index === 0) return `M ${point.x} ${point.y}`;
-      return `L ${point.x} ${point.y}`;
-    })
-    .join(' ');
+  // Otherwise calculate cumulatively from nights
+  let dayOffset = 0;
+  for (let i = 0; i < index; i += 1) {
+    dayOffset += destinations[i]?.nights ?? 1;
+  }
+  const nights = dest?.nights ?? 1;
 
-  return (
-    <View style={styles.routeMapWrap}>
-      <Svg width="100%" height="100%" viewBox="0 0 268 92">
-        {points.length > 1 && (
-          <Path
-            d={path}
-            stroke={color}
-            strokeWidth={7}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity={0.28}
-            fill="none"
-          />
-        )}
+  const [sy, sm, sd] = tripStartDate.split('-').map(Number);
+  const arrivalDate = new Date(sy, sm - 1, sd + dayOffset);
+  const departureDate = new Date(sy, sm - 1, sd + dayOffset + nights);
 
-        {points.map((point, index) => {
-          const isPast = index < currentIndex;
-          const isCurrent = index === currentIndex;
-          const isFuture = index > currentIndex;
-
-          return (
-            <Circle
-              key={`${point.x}-${point.y}`}
-              cx={point.x}
-              cy={point.y}
-              r={isCurrent ? 10 : 7}
-              fill={isFuture ? '#FFFCFA' : color}
-              stroke={color}
-              strokeWidth={isCurrent ? 4 : 3}
-              opacity={isPast || isCurrent ? 1 : 0.75}
-            />
-          );
-        })}
-      </Svg>
-
-      {count > 6 && (
-        <View style={styles.routeMoreBadge}>
-          <Text style={styles.routeMoreText}>+{count - 6}</Text>
-        </View>
-      )}
-    </View>
-  );
+  return {
+    arrival: localDateStr(arrivalDate),
+    departure: localDateStr(departureDate),
+  };
 }
 
-function HeroBanner({
-  trip,
-  destinations,
-  theme,
-}: {
-  trip: any;
-  destinations: any[];
-  theme: any;
-}) {
-  const destinationName = destinations?.[0]?.name ?? trip.cover_destination ?? 'Next adventure';
+// ─── Category emoji (for highlights dedup logic) ──────────────────────────────
+const CATEGORY_EMOJI: Record<string, string> = {
+  food: '🍜', activity: '🎯', shopping: '🛍️', other: '📍',
+};
 
-  return (
-    <View
-      style={[
-        styles.hero,
-        {
-          backgroundColor: theme.background,
-          borderColor: theme.border,
-        },
-      ]}
-    >
-      <View style={[styles.heroBlobOne, { backgroundColor: theme.blobOne }]} />
-      <View style={[styles.heroBlobTwo, { backgroundColor: theme.blobTwo }]} />
-
-      <Text style={styles.heroCloudLeft}>☁️</Text>
-      <Text style={styles.heroCloudRight}>☁️</Text>
-
-      <View style={[styles.heroHillBack, { backgroundColor: theme.hillBack }]} />
-      <View style={[styles.heroHillFront, { backgroundColor: theme.hillFront }]} />
-
-      <View style={[styles.heroPill, { backgroundColor: theme.pillBg }]}>
-        <Text style={[styles.heroPillText, { color: theme.text }]} numberOfLines={1}>
-          {destinationName}
-        </Text>
-      </View>
-
-      <View style={styles.heroTitleBlock}>
-        <Text style={styles.heroTitle} numberOfLines={2}>
-          {trip.name}
-        </Text>
-        <Text style={styles.heroSubtitle} numberOfLines={1}>
-          {getTripMood(destinations)}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function StatCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-}) {
-  return (
-    <View style={styles.statCard}>
-      <Text style={styles.statIcon}>{icon}</Text>
-      <Text style={styles.statValue} numberOfLines={1}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function DestinationRow({
-  destination,
-  index,
-  theme,
-  onPress,
-}: {
-  destination: any;
-  index: number;
-  theme: any;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={styles.destinationRow}
-      onPress={onPress}
-      activeOpacity={0.78}
-    >
-      <View style={[styles.destinationNumber, { backgroundColor: theme.blobOne }]}>
-        <Text style={[styles.destinationNumberText, { color: theme.text }]}>
-          {index + 1}
-        </Text>
-      </View>
-
-      <View style={styles.destinationInfo}>
-        <Text style={styles.destinationName} numberOfLines={1}>
-          {destination.name}
-        </Text>
-
-        <Text style={styles.destinationMeta} numberOfLines={1}>
-          {destination.nights ?? 0} nights
-          {destination.country ? ` • ${destination.country}` : ''}
-        </Text>
-      </View>
-
-      <Text style={styles.destinationChevron}>›</Text>
-    </TouchableOpacity>
-  );
-}
+const TRANSPORT_TYPE_TO_MODE: Record<string, TransportMode> = {
+  Flight: 'flight',
+  Train: 'train',
+  Bus: 'bus',
+  Ferry: 'boat',
+  Boat: 'boat',
+  Car: 'car',
+  Taxi: 'car',
+  Walking: 'walk',
+};
 
 export default function TripOverviewScreen() {
   const navigation = useNavigation<any>();
@@ -316,6 +151,8 @@ export default function TripOverviewScreen() {
   const [destinations, setDestinations] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
+  const [accommodations, setAccommodations] = useState<any[]>([]);
+  const [transport, setTransport] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -338,7 +175,6 @@ export default function TripOverviewScreen() {
         .select('*')
         .eq('id', paramTripId)
         .single();
-
       tripData = data;
     } else {
       const { data: memberships } = await supabase
@@ -375,22 +211,34 @@ export default function TripOverviewScreen() {
       .select('*')
       .eq('trip_id', tripData.id)
       .order('order_index', { ascending: true });
-
     setDestinations(destsData ?? []);
 
     const { data: expData } = await supabase
       .from('expenses')
       .select('amount')
       .eq('trip_id', tripData.id);
-
     setExpenses(expData ?? []);
 
     const { data: actsData } = await supabase
       .from('activities')
-      .select('id')
-      .eq('trip_id', tripData.id);
-
+      .select('*')
+      .eq('trip_id', tripData.id)
+      .order('date', { ascending: true })
+      .order('time', { ascending: true });
     setActivities(actsData ?? []);
+
+    const { data: accomData } = await supabase
+      .from('accommodations')
+      .select('*')
+      .eq('trip_id', tripData.id);
+    setAccommodations(accomData ?? []);
+
+    const { data: transportData } = await supabase
+      .from('transport')
+      .select('*')
+      .eq('trip_id', tripData.id)
+      .order('departure_time', { ascending: true });
+    setTransport(transportData ?? []);
 
     setLoading(false);
   }
@@ -415,7 +263,6 @@ export default function TripOverviewScreen() {
           <Text style={styles.headerTitle}>Trip Overview</Text>
           <View style={{ width: 40 }} />
         </View>
-
         <View style={styles.center}>
           <Text style={styles.emptyEmoji}>✈️</Text>
           <Text style={styles.emptyTitle}>No active trip</Text>
@@ -424,6 +271,7 @@ export default function TripOverviewScreen() {
     );
   }
 
+  // ─── Derived values (unchanged business logic) ──────────────────────────────
   const totalDays = getTotalDays(trip.start_date, trip.end_date);
   const currentDay = getCurrentDay(trip.start_date, trip.end_date);
   const safeDay = Math.min(Math.max(currentDay, 1), totalDays);
@@ -440,6 +288,138 @@ export default function TripOverviewScreen() {
   const currentDestinationIndex = getCurrentDestinationIndex(destinations, safeDay);
 
   const currency = trip.currency ?? 'EUR';
+  const today = localDateStr(new Date());
+
+  // ─── Build Journey timeline items ────────────────────────────────────────────
+  const timelineItems: TimelineItem[] = destinations.map((dest, index) => {
+    const destTheme = getDestinationHero(dest.name, dest.country);
+    const destNameLower = (dest.name ?? '').toLowerCase();
+    const { arrival, departure } = getDestinationDateRange(destinations, index, trip.start_date);
+
+    // Accommodation match — destination_id first, then address/name/location text fallback
+    const matchedAccom = accommodations.find((a: any) =>
+      a.destination_id === dest.id ||
+      a.address?.toLowerCase().includes(destNameLower) ||
+      a.name?.toLowerCase().includes(destNameLower) ||
+      a.city?.toLowerCase().includes(destNameLower) ||
+      a.location?.toLowerCase().includes(destNameLower)
+    ) ?? null;
+
+    // Highlights — activities matched by location, excluding transport categories
+    const destActivities = activities.filter((a: any) =>
+      (a.destination_id === dest.id || a.location?.toLowerCase().includes(destNameLower)) &&
+      !['transport', 'flight'].includes(a.category ?? '')
+    );
+
+    const uniqueCategories: string[] = [];
+    for (const act of destActivities) {
+      const cat = act.category ?? 'other';
+      if (!uniqueCategories.includes(cat)) uniqueCategories.push(cat);
+      if (uniqueCategories.length >= 4) break;
+    }
+    const highlightCategories = uniqueCategories.length > 0
+      ? uniqueCategories
+      : destActivities.slice(0, 4).map((a: any) => a.category ?? 'other');
+    const extraHighlightsCount = Math.max(0, destActivities.length - highlightCategories.length);
+
+    // Transport icon — arrival_location matches this destination; first destination falls back to flight
+    const matchedTransport = transport.find((t: any) =>
+      t.arrival_location?.toLowerCase().includes(destNameLower)
+    );
+    const transportMode: TransportMode = matchedTransport
+      ? (TRANSPORT_TYPE_TO_MODE[matchedTransport.type] ?? 'car')
+      : (index === 0 ? 'flight' : 'car');
+
+    // Status
+    let status: JourneyCardData['status'] = 'upcoming';
+    if (index === currentDestinationIndex && !isUpcoming) status = 'current';
+    else if (index === currentDestinationIndex + 1) status = 'next';
+    else if (index < currentDestinationIndex) status = 'completed';
+
+    const cardData: JourneyCardData = {
+      id: dest.id,
+      index,
+      name: dest.name,
+      country: dest.country ?? null,
+      arrivalDate: arrival,
+      departureDate: departure,
+      nights: dest.nights ?? null,
+      accommodation: matchedAccom
+        ? { name: matchedAccom.name, checkIn: matchedAccom.check_in ?? null }
+        : null,
+      highlightCategories,
+      extraHighlightsCount,
+      status,
+      heroImage: destTheme.image ?? null,
+    };
+
+    return {
+      card: cardData,
+      transportMode,
+      accentColor: destTheme.accent,
+      cardBg: destTheme.background,
+    };
+  });
+
+  // ─── What's Next data ─────────────────────────────────────────────────────────
+  const upcomingActivity = activities
+    .filter((a: any) => a.status !== 'completed' && (!a.date || a.date >= today))
+    .sort((a: any, b: any) => (a.date ?? '').localeCompare(b.date ?? '') || (a.time ?? '').localeCompare(b.time ?? ''))[0] ?? null;
+
+  const currentAccommodation = accommodations.find((a: any) => {
+    if (!a.check_in || !a.check_out) return false;
+    const checkIn = a.check_in.split('T')[0];
+    const checkOut = a.check_out.split('T')[0];
+    return checkIn <= today && today <= checkOut;
+  }) ?? accommodations[0] ?? null;
+
+  const nextTransport = transport
+    .filter((t: any) => !t.departure_time || t.departure_time.split('T')[0] >= today)
+    .sort((a: any, b: any) => (a.departure_time ?? '').localeCompare(b.departure_time ?? ''))[0] ?? null;
+
+  const whatsNextItems: WhatsNextItem[] = [
+    {
+      icon: '📅',
+      label: "What's Next",
+      title: upcomingActivity ? upcomingActivity.title : 'Nothing planned',
+      subtitle: upcomingActivity
+        ? `${upcomingActivity.date === today ? 'Today' : upcomingActivity.date ?? ''}, ${upcomingActivity.time?.slice(0, 5) ?? ''}`
+        : 'All caught up',
+      onPress: () => navigation.navigate('Itinerary'),
+      accentColor: theme.accent,
+    },
+    {
+      icon: '🛏️',
+      label: 'Accommodation',
+      title: currentAccommodation ? currentAccommodation.name : 'No accommodation',
+      subtitle: currentAccommodation?.check_in
+        ? `Check-in ${currentAccommodation.check_in.split('T')[0] === today ? 'today' : currentAccommodation.check_in.split('T')[0]}`
+        : 'Not set',
+      onPress: () => navigation.navigate('Accommodation', { tripId: trip.id }),
+      accentColor: theme.accent,
+    },
+    {
+      icon: '✈️',
+      label: 'Transportation',
+      title: nextTransport
+        ? `${nextTransport.departure_location ?? ''} → ${nextTransport.arrival_location ?? ''}`
+        : 'No transport',
+      subtitle: nextTransport?.departure_time
+        ? `${nextTransport.departure_time.split('T')[0] === today ? 'Today' : nextTransport.departure_time.split('T')[0]}, ${new Date(nextTransport.departure_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
+        : 'Not set',
+      onPress: () => navigation.navigate('Transport', { tripId: trip.id }),
+      accentColor: theme.accent,
+    },
+    {
+      icon: '💰',
+      label: 'Budget',
+      title: `${currency} ${totalSpent.toFixed(0)} / ${trip.budget?.toLocaleString() ?? 0}`,
+      subtitle: `${percentUsed}% used`,
+      onPress: () => navigation.navigate('Budget', { tripId: trip.id }),
+      accentColor: theme.accent,
+      progressPercent: percentUsed,
+    },
+  ];
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
@@ -449,32 +429,35 @@ export default function TripOverviewScreen() {
         contentContainerStyle={styles.content}
       >
         <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <Text style={styles.backIcon}>‹</Text>
-          </TouchableOpacity>
-
           <Text style={styles.headerTitle}>Trip Overview</Text>
-
-          <TouchableOpacity
-            style={styles.settingsBtn}
-            onPress={() => navigation.navigate('TripSettings', { tripId: trip.id })}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.settingsIcon}>⋯</Text>
-          </TouchableOpacity>
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={() => navigation.navigate('Notifications')}
+              activeOpacity={0.8}
+            >
+              <Text style={{ fontSize: 18 }}>🔔</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={() => navigation.navigate('TripSettings', { tripId: trip.id })}
+              activeOpacity={0.8}
+            >
+              <Text style={{ fontSize: 18 }}>⋯</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
+        {/* ─── Hero ─────────────────────────────────────────────────────── */}
         <View style={styles.heroWrap}>
-          <HeroBanner trip={trip} destinations={destinations} theme={theme} />
+          <TripHero trip={trip} destinations={destinations} theme={theme} />
         </View>
 
+        {/* ─── Progress card (with route map + stats inline, per mockup) ── */}
         <View
           style={[
             styles.progressCard,
-            {
-              backgroundColor: theme.hillBack,
-              borderColor: theme.border,
-            },
+            { backgroundColor: theme.hillBack, borderColor: theme.border },
           ]}
         >
           <View style={styles.progressTopRow}>
@@ -482,106 +465,87 @@ export default function TripOverviewScreen() {
               <Text style={styles.progressTitle}>
                 {isUpcoming ? `Departs in ${daysUntilStart} days` : `Day ${safeDay} of ${totalDays}`}
               </Text>
-
               <Text style={styles.progressSubtitle}>
                 {isUpcoming ? `${totalDays} days total` : `${daysLeft} days left`}
               </Text>
             </View>
-
-            <TripRouteMap
-              count={destinations.length}
-              currentIndex={currentDestinationIndex}
-              color={theme.text}
-            />
+            <Text style={styles.progressPercent}>{progressPercent}%</Text>
           </View>
 
           <View style={styles.progressTrack}>
             <View
               style={[
                 styles.progressFill,
-                {
-                  width: `${progressPercent}%`,
-                  backgroundColor: theme.text,
-                },
+                { width: `${progressPercent}%`, backgroundColor: theme.text },
               ]}
             />
           </View>
-
-          <View style={styles.destinationSummaryRow}>
-            <View>
-              <Text style={styles.destinationSummaryLabel}>
-                📍 {destinations.length} destinations
-              </Text>
-
-              <Text style={styles.destinationSummaryText} numberOfLines={1}>
-                {getDestinationSummary(destinations)}
-              </Text>
-            </View>
-
-            <Text style={styles.progressPercent}>{progressPercent}%</Text>
-          </View>
         </View>
 
-        <View style={styles.statsGrid}>
-          <StatCard icon="📅" label="Days" value={String(totalDays)} />
-          <StatCard icon="📍" label="Destinations" value={String(destinations.length)} />
-          <StatCard icon="🎯" label="Activities" value={String(activities.length)} />
-          <StatCard icon="💸" label="Spent" value={`${currency} ${totalSpent.toFixed(0)}`} />
-        </View>
-
-        <View
-          style={[
-            styles.sectionCard,
-            {
-              backgroundColor: theme.background,
-              borderColor: theme.border,
-            },
-          ]}
-        >
-          <View style={styles.sectionHeader}>
+        {/* ─── Quick stats row ──────────────────────────────────────────── */}
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <Text style={styles.statIcon}>📍</Text>
             <View>
-              <Text style={styles.sectionTitle}>Destinations</Text>
-              <Text style={styles.sectionSubtitle}>
-                Your route, stop by stop
-              </Text>
+              <Text style={styles.statValue}>{destinations.length}</Text>
+              <Text style={styles.statLabel}>destinations</Text>
             </View>
           </View>
-
-          <View style={styles.destinationList}>
-            {destinations.map((destination, index) => (
-              <DestinationRow
-                key={destination.id}
-                destination={destination}
-                index={index}
-                theme={theme}
-                onPress={() => navigation.navigate('DestinationDetails', { destinationId: destination.id })}
-              />
-            ))}
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statIcon}>📅</Text>
+            <View>
+              <Text style={styles.statValue}>{activities.length}</Text>
+              <Text style={styles.statLabel}>activities</Text>
+            </View>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statIcon}>💵</Text>
+            <View>
+              <Text style={styles.statValue}>{currency} {totalSpent.toFixed(0)}</Text>
+              <Text style={styles.statLabel}>spent</Text>
+            </View>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statIcon}>👥</Text>
+            <View>
+              <Text style={styles.statValue}>2</Text>
+              <Text style={styles.statLabel}>travelers</Text>
+            </View>
           </View>
         </View>
 
-        <View style={styles.budgetCard}>
-          <View>
-            <Text style={styles.sectionTitle}>Budget</Text>
-            <Text style={styles.sectionSubtitle}>
-              {currency} {totalSpent.toFixed(0)} spent of {currency} {trip.budget?.toLocaleString() ?? 0}
-            </Text>
-          </View>
-
-          <View style={styles.budgetTrack}>
-            <View
-              style={[
-                styles.budgetFill,
-                {
-                  width: `${Math.min(percentUsed, 100)}%`,
-                  backgroundColor: theme.text,
-                },
-              ]}
-            />
-          </View>
-
-          <Text style={styles.budgetPercent}>{percentUsed}% used</Text>
+        {/* ─── Your Journey ─────────────────────────────────────────────── */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Your Journey</Text>
+          <TouchableOpacity
+            style={styles.viewMapBtn}
+            onPress={() => navigation.navigate('Explore')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.viewMapText}>🗺️ View on Map</Text>
+          </TouchableOpacity>
         </View>
+
+        {destinations.length === 0 ? (
+          <View style={styles.emptyJourney}>
+            <Text style={styles.emptyEmoji}>📍</Text>
+            <Text style={styles.emptyTitle}>No destinations yet</Text>
+          </View>
+        ) : (
+          <JourneyTimeline
+            items={timelineItems}
+            onCardPress={(destinationId) => navigation.navigate('DestinationDetails', { destinationId })}
+          />
+        )}
+
+        {/* ─── What's Next ──────────────────────────────────────────────── */}
+        <View style={[styles.sectionHeaderRow, { marginTop: 8 }]}>
+          <Text style={styles.sectionTitle}>What's Next</Text>
+        </View>
+        <WhatsNextRow items={whatsNextItems} />
 
         <View style={{ height: 28 }} />
       </ScrollView>
@@ -590,455 +554,59 @@ export default function TripOverviewScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: '#FFF8F0',
-  },
-
-  scroll: {
-    flex: 1,
-  },
-
-  content: {
-    paddingBottom: 120,
-  },
-
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  safe: { flex: 1, backgroundColor: '#FFF8F0' },
+  scroll: { flex: 1 },
+  content: { paddingBottom: 120 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingBottom: 10,
+  },
+  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  backIcon: { fontSize: 28, color: '#1A1A1A', fontWeight: '300' },
+  headerTitle: { fontSize: 22, fontWeight: '900', color: '#1A1A1A' },
+  headerRight: { flexDirection: 'row', gap: 8 },
+  headerIconBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
   },
 
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.78)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  backIcon: {
-    fontSize: 30,
-    color: '#1A1A1A',
-    fontWeight: '300',
-    marginTop: -2,
-  },
-
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#1A1A1A',
-  },
-
-  settingsBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.78)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  settingsIcon: {
-    fontSize: 24,
-    color: '#1A1A1A',
-    fontWeight: '800',
-    marginTop: -4,
-  },
-
-  heroWrap: {
-    marginHorizontal: 16,
-  },
-
-  hero: {
-    height: 190,
-    borderRadius: 32,
-    borderWidth: 1,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-
-  heroBlobOne: {
-    position: 'absolute',
-    width: 170,
-    height: 170,
-    borderRadius: 999,
-    top: -64,
-    left: -44,
-    opacity: 0.78,
-  },
-
-  heroBlobTwo: {
-    position: 'absolute',
-    width: 210,
-    height: 210,
-    borderRadius: 999,
-    right: -70,
-    bottom: -88,
-    opacity: 0.72,
-  },
-
-  heroCloudLeft: {
-    position: 'absolute',
-    top: 24,
-    left: 34,
-    fontSize: 24,
-    opacity: 0.72,
-  },
-
-  heroCloudRight: {
-    position: 'absolute',
-    top: 42,
-    right: 72,
-    fontSize: 20,
-    opacity: 0.62,
-  },
-
-  heroHillBack: {
-    position: 'absolute',
-    left: -24,
-    right: -40,
-    bottom: -38,
-    height: 92,
-    borderTopLeftRadius: 130,
-    borderTopRightRadius: 150,
-    transform: [{ rotate: '-2deg' }],
-  },
-
-  heroHillFront: {
-    position: 'absolute',
-    left: 72,
-    right: -16,
-    bottom: -48,
-    height: 96,
-    borderTopLeftRadius: 130,
-    borderTopRightRadius: 130,
-    transform: [{ rotate: '3deg' }],
-  },
-
-  heroPill: {
-    position: 'absolute',
-    top: 18,
-    left: 18,
-    borderRadius: 18,
-    paddingHorizontal: 13,
-    paddingVertical: 7,
-    maxWidth: '58%',
-  },
-
-  heroPillText: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
-
-  heroTitleBlock: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 24,
-  },
-
-  heroTitle: {
-    fontSize: 27,
-    fontWeight: '900',
-    color: '#1A1A1A',
-    letterSpacing: -0.5,
-  },
-
-  heroSubtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#3D2B1F',
-    opacity: 0.74,
-  },
+  heroWrap: { marginHorizontal: 16, marginBottom: 12 },
 
   progressCard: {
-    marginHorizontal: 16,
-    marginTop: -22,
-    borderRadius: 30,
-    borderWidth: 1,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 18,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 7 },
-    elevation: 7,
+    marginHorizontal: 16, borderRadius: 22, borderWidth: 1,
+    paddingHorizontal: 18, paddingVertical: 14, marginBottom: 12,
   },
+  progressTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  progressTextBlock: { flex: 1 },
+  progressTitle: { fontSize: 16, fontWeight: '900', color: '#1A1A1A' },
+  progressSubtitle: { marginTop: 2, fontSize: 12, fontWeight: '700', color: '#3D2B1F', opacity: 0.7 },
+  progressPercent: { fontSize: 18, fontWeight: '900', color: '#1A1A1A' },
+  progressTrack: { marginTop: 10, height: 8, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.55)', overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 999 },
 
-  progressTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
+  statsRow: {
+    flexDirection: 'row', marginHorizontal: 16, marginBottom: 20,
+    backgroundColor: '#fff', borderRadius: 20, paddingVertical: 14, paddingHorizontal: 8,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
   },
+  statItem: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  statIcon: { fontSize: 16 },
+  statValue: { fontSize: 14, fontWeight: '900', color: '#1A1A1A' },
+  statLabel: { fontSize: 9, color: '#8A817A', fontWeight: '600' },
+  statDivider: { width: 1, backgroundColor: '#F0EBE5' },
 
-  progressTextBlock: {
-    flex: 1,
+  sectionHeaderRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginHorizontal: 16, marginBottom: 12,
   },
+  sectionTitle: { fontSize: 19, fontWeight: '900', color: '#1A1A1A', letterSpacing: -0.3 },
+  viewMapBtn: { backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
+  viewMapText: { fontSize: 12, fontWeight: '700', color: '#1A1A1A' },
 
-  progressTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#1A1A1A',
-  },
-
-  progressSubtitle: {
-    marginTop: 4,
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#3D2B1F',
-    opacity: 0.72,
-  },
-
-  routeMapWrap: {
-    width: 138,
-    height: 72,
-    position: 'relative',
-    marginTop: -4,
-  },
-
-  routeMoreBadge: {
-    position: 'absolute',
-    right: 0,
-    bottom: 2,
-    minWidth: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#FFFCFA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 5,
-  },
-
-  routeMoreText: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#1A1A1A',
-  },
-
-  progressTrack: {
-    marginTop: 12,
-    height: 9,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.55)',
-    overflow: 'hidden',
-  },
-
-  progressFill: {
-    height: '100%',
-    borderRadius: 999,
-  },
-
-  destinationSummaryRow: {
-    marginTop: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    gap: 12,
-  },
-
-  destinationSummaryLabel: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#1A1A1A',
-    opacity: 0.8,
-  },
-
-  destinationSummaryText: {
-    marginTop: 4,
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#3D2B1F',
-    opacity: 0.78,
-    maxWidth: 230,
-  },
-
-  progressPercent: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#1A1A1A',
-  },
-
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    paddingHorizontal: 16,
-    marginTop: 16,
-  },
-
-  statCard: {
-    width: '48.5%',
-    backgroundColor: '#FFFCFA',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#F3EFEA',
-    padding: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.045,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-
-  statIcon: {
-    fontSize: 23,
-    marginBottom: 8,
-  },
-
-  statValue: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#1A1A1A',
-  },
-
-  statLabel: {
-    marginTop: 2,
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#8A817A',
-  },
-
-  sectionCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 28,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 3,
-  },
-
-  sectionHeader: {
-    marginBottom: 12,
-  },
-
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#1A1A1A',
-    letterSpacing: -0.3,
-  },
-
-  sectionSubtitle: {
-    marginTop: 3,
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#8A817A',
-  },
-
-  destinationList: {
-    gap: 8,
-  },
-
-  destinationRow: {
-    minHeight: 70,
-    borderRadius: 20,
-    backgroundColor: '#FFFCFA',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-  },
-
-  destinationNumber: {
-    width: 44,
-    height: 44,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-
-  destinationNumberText: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-
-  destinationInfo: {
-    flex: 1,
-  },
-
-  destinationName: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#1A1A1A',
-  },
-
-  destinationMeta: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#8A817A',
-  },
-
-  destinationChevron: {
-    fontSize: 24,
-    color: '#B8AEA5',
-    fontWeight: '300',
-    marginLeft: 10,
-  },
-
-  budgetCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    backgroundColor: '#FFFCFA',
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: '#F3EFEA',
-    padding: 18,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 3,
-  },
-
-  budgetTrack: {
-    marginTop: 14,
-    height: 9,
-    borderRadius: 999,
-    backgroundColor: '#F2ECE6',
-    overflow: 'hidden',
-  },
-
-  budgetFill: {
-    height: '100%',
-    borderRadius: 999,
-  },
-
-  budgetPercent: {
-    marginTop: 8,
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#8A817A',
-  },
-
-  emptyEmoji: {
-    fontSize: 48,
-    marginBottom: 12,
-  },
-
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1A1A1A',
-  },
+  emptyJourney: { alignItems: 'center', paddingVertical: 40 },
+  emptyEmoji: { fontSize: 44, marginBottom: 12 },
+  emptyTitle: { fontSize: 17, fontWeight: '800', color: '#1A1A1A' },
 });

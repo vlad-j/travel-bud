@@ -8,14 +8,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import CartoonIcon from '../components/CartoonIcon';
-import StatusBadge from '../components/StatusBadge';
-import { Sparkle, Cloud, Dot, DottedLine } from '../components/TravelDecorations';
-import { STATUS_BG } from '../data/colors';
 import { supabase } from '../lib/supabase';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
 import { searchLocations } from '../lib/locationService';
 import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 import { useRealtimeSync } from '../../hooks/useRealtimeSync';
+import { getDestinationHero } from '../lib/destinationHero';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function localDateStr(date: Date): string {
@@ -726,7 +724,7 @@ export default function ItineraryScreen() {
   if (!trip) {
     return (
       <SafeAreaView style={styles.safe} edges={[]}>
-        <View style={[styles.header, { paddingTop: statusBarHeight }]}>
+        <View style={[styles.headerOverlay, { paddingTop: statusBarHeight + 8 }]}>
           <Text style={styles.title}>Itinerary</Text>
         </View>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
@@ -741,74 +739,97 @@ export default function ItineraryScreen() {
     );
   }
 
+  const heroDestination = trip?.destinations?.[0] ?? null;
+  const heroTheme = getDestinationHero(heroDestination?.name, heroDestination?.country);
+
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: statusBarHeight }]}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Itinerary</Text>
-          <TouchableOpacity style={styles.tripSelector} onPress={() => setShowTripSelector(true)}>
-            <Text style={styles.tripSelectorText} numberOfLines={1}>{tripName}</Text>
-            <Text style={{ fontSize: 12, color: '#4CAF50' }}>▾</Text>
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+
+        {/* Header overlay */}
+        <View style={[styles.headerOverlay, { paddingTop: statusBarHeight + 8 }]}>
+          <View>
+            <Text style={styles.title}>Itinerary</Text>
+            <TouchableOpacity style={styles.tripSelector} onPress={() => setShowTripSelector(true)}>
+              <Text style={styles.tripSelectorText} numberOfLines={1}>{tripName}</Text>
+              <Text style={{ fontSize: 12, color: '#4CAF50' }}>▾</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={styles.calBtn} onPress={() => setShowCalendar(true)} activeOpacity={0.85}>
+            <Text style={{ fontSize: 22 }}>📅</Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.calBtn} onPress={() => setShowCalendar(true)}>
-          <Text style={{ fontSize: 22 }}>📅</Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* Day Navigation */}
-      <View style={styles.dayNav}>
-        <TouchableOpacity
-          style={[styles.dayNavBtn, selectedDay <= 1 && styles.dayNavBtnDisabled]}
-          onPress={() => { if (selectedDay > 1) selectDay(selectedDay - 1); }}
-        >
-          <Text style={styles.dayNavArrow}>‹</Text>
-        </TouchableOpacity>
+        {/* Hero */}
+        <View style={[styles.heroCard, { backgroundColor: heroTheme.background, borderColor: heroTheme.border }]}>
+          <View style={[styles.heroBlobOne, { backgroundColor: heroTheme.blobOne }]} />
+          <View style={[styles.heroBlobTwo, { backgroundColor: heroTheme.blobTwo }]} />
+          <View style={[styles.heroHillBack, { backgroundColor: heroTheme.hillBack }]} />
+          <View style={[styles.heroHillFront, { backgroundColor: heroTheme.hillFront }]} />
 
-        <TouchableOpacity style={styles.dayNavCenter} onPress={() => setShowCalendar(true)}>
-          <Text style={styles.dayNavLabel}>Day {selectedDay} of {totalDays}</Text>
-          <Text style={styles.dayNavDate}>{displayDate}</Text>
-        </TouchableOpacity>
+          {heroDestination && (
+            <View style={[styles.heroPill, { backgroundColor: heroTheme.pillBg }]}>
+              <Text style={[styles.heroPillText, { color: heroTheme.text }]} numberOfLines={1}>
+                {heroDestination.name}{heroDestination.country ? `, ${heroDestination.country}` : ''}
+              </Text>
+            </View>
+          )}
+        </View>
 
-        <TouchableOpacity
-          style={[styles.dayNavBtn, selectedDay >= totalDays && styles.dayNavBtnDisabled]}
-          onPress={() => { if (selectedDay < totalDays) selectDay(selectedDay + 1); }}
-        >
-          <Text style={styles.dayNavArrow}>›</Text>
-        </TouchableOpacity>
-      </View>
+        {/* Floating Day Selector */}
+        <View style={styles.daySelectorCard}>
+          <TouchableOpacity
+            style={[styles.dayNavBtn, selectedDay <= 1 && styles.dayNavBtnDisabled]}
+            onPress={() => { if (selectedDay > 1) selectDay(selectedDay - 1); }}
+          >
+            <Text style={styles.dayNavArrow}>‹</Text>
+          </TouchableOpacity>
 
-      {/* Today shortcut */}
-      {selectedDate !== getTodayStr() && (
-        <TouchableOpacity style={styles.todayBanner} onPress={() => {
-          const [syear, smonth, sday] = trip.start_date.split('-').map(Number);
-          const startLocal = new Date(syear, smonth - 1, sday);
-          const now = new Date();
-          const todayLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          const diff = Math.round((todayLocal.getTime() - startLocal.getTime()) / (1000 * 60 * 60 * 24));
-          if (diff >= 0 && diff < totalDays) selectDay(diff + 1);
-        }}>
-          <Text style={styles.todayBannerText}>📍 Jump to today</Text>
-        </TouchableOpacity>
-      )}
+          <TouchableOpacity style={styles.dayNavCenter} onPress={() => setShowCalendar(true)}>
+            <Text style={styles.dayNavLabel}>Day {selectedDay} of {totalDays}</Text>
+            <Text style={styles.dayNavDate}>{displayDate}</Text>
+          </TouchableOpacity>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Day Card */}
+          <TouchableOpacity
+            style={[styles.dayNavBtn, selectedDay >= totalDays && styles.dayNavBtnDisabled]}
+            onPress={() => { if (selectedDay < totalDays) selectDay(selectedDay + 1); }}
+          >
+            <Text style={styles.dayNavArrow}>›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Today shortcut */}
+        {selectedDate !== getTodayStr() && (
+          <TouchableOpacity style={styles.todayBanner} onPress={() => {
+            const [syear, smonth, sday] = trip.start_date.split('-').map(Number);
+            const startLocal = new Date(syear, smonth - 1, sday);
+            const now = new Date();
+            const todayLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const diff = Math.round((todayLocal.getTime() - startLocal.getTime()) / (1000 * 60 * 60 * 24));
+            if (diff >= 0 && diff < totalDays) selectDay(diff + 1);
+          }}>
+            <Text style={styles.todayBannerText}>📍 Jump to today</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Day Summary Card */}
         <View style={styles.dayCard}>
-          <View style={styles.dayCardHeader}>
+          <View style={styles.dayCardLeft}>
+            <View style={styles.dayCardIconWrap}>
+              <Text style={{ fontSize: 18 }}>📅</Text>
+            </View>
             <View>
               <Text style={styles.dayCardTitle}>{displayDate}</Text>
               <Text style={styles.dayCardSub}>Day {selectedDay} of {totalDays}</Text>
             </View>
-            <View style={styles.dayCardStats}>
-              <Text style={styles.dayCardStatsText}>{activities.length} activities</Text>
-              {doneCount > 0 && <Text style={styles.dayCardDone}>✓ {doneCount} done</Text>}
-            </View>
+          </View>
+          <View style={styles.dayCardRight}>
+            <Text style={styles.dayCardStatsText}>{activities.length} activities</Text>
+            {doneCount > 0 && <Text style={styles.dayCardDone}>✓ {doneCount} done</Text>}
           </View>
         </View>
 
-        {/* Activities */}
+        {/* Activities Timeline */}
         <View style={styles.activitiesWrap}>
           {activities.length === 0 ? (
             <View style={styles.emptyDay}>
@@ -823,54 +844,73 @@ export default function ItineraryScreen() {
             activities.map((activity, index) => {
               const iconData = CATEGORY_ICONS[activity.category] ?? CATEGORY_ICONS.default;
               const displayStatus = getActivityStatus(activity.time?.slice(0, 5) ?? '00:00', activity.status);
-              const statusBg = STATUS_BG[displayStatus] ?? '#fff';
               return (
-                <View key={activity.id}>
+                <View key={activity.id} style={styles.timelineRow}>
+                  <View style={styles.timelineCol}>
+                    <Text style={styles.time}>{activity.time?.slice(0, 5) ?? '--:--'}</Text>
+                    <View style={styles.timelineDot} />
+                    {index < activities.length - 1 && <View style={styles.timelineLine} />}
+                  </View>
+
                   <TouchableOpacity
-                    activeOpacity={0.7}
+                    style={styles.activityCardTouch}
+                    activeOpacity={0.85}
                     onPress={() => toggleActivityStatus(activity)}
-                    onLongPress={() => {
-                      Alert.alert(activity.title, 'What would you like to do?', [
-                        { text: 'Edit', onPress: () => setEditActivity(activity) },
-                        { text: 'Delete', style: 'destructive', onPress: () => handleDeleteActivity(activity.id) },
-                        { text: 'Cancel', style: 'cancel' },
-                      ]);
-                    }}
                   >
-                    <View style={[styles.activityRow, { backgroundColor: statusBg }]}>
-                      <View style={styles.timeCol}>
-                        <Text style={styles.time}>{activity.time?.slice(0, 5) ?? '--:--'}</Text>
-                        {index < activities.length - 1 && <View style={styles.connector} />}
-                      </View>
+                    <View style={styles.activityCard}>
                       <CartoonIcon emoji={iconData.icon} bg={iconData.bg} size={44} />
                       <View style={styles.content}>
                         <Text style={styles.activityTitle}>{activity.title}</Text>
-                        {activity.location ? <Text style={styles.subtitle}>{activity.location}</Text> : null}
-                        <View style={styles.categoryTag}>
-                          <Text style={styles.categoryText}>{activity.category}</Text>
-                        </View>
+                        <Text style={styles.subtitle} numberOfLines={1}>
+                          {activity.category ? activity.category.charAt(0).toUpperCase() + activity.category.slice(1) : ''}
+                          {activity.location ? ` · ${activity.location}` : ''}
+                        </Text>
                       </View>
+
                       {displayStatus === 'DONE' ? (
                         <View style={styles.checkCircle}><Text style={styles.checkMark}>✓</Text></View>
                       ) : (
-                        <StatusBadge status={displayStatus} small />
+                        <View style={styles.checkCircleEmpty} />
                       )}
+
+                      <TouchableOpacity
+                        style={styles.overflowBtn}
+                        onPress={() => {
+                          Alert.alert(activity.title, 'What would you like to do?', [
+                            { text: 'Edit', onPress: () => setEditActivity(activity) },
+                            { text: 'Delete', style: 'destructive', onPress: () => handleDeleteActivity(activity.id) },
+                            { text: 'Cancel', style: 'cancel' },
+                          ]);
+                        }}
+                      >
+                        <Text style={styles.overflowDots}>⋮</Text>
+                      </TouchableOpacity>
                     </View>
                   </TouchableOpacity>
-                  {index < activities.length - 1 && (
-                    <View style={styles.divider}><DottedLine color="#E0E0E0" style={{ marginLeft: 24 }} /></View>
-                  )}
                 </View>
               );
             })
           )}
+
+          {activities.length > 0 && (
+            <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
+              <Text style={styles.addIcon}>＋</Text>
+              <Text style={styles.addText}>Add activity</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {activities.length > 0 && (
-          <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
-            <Text style={styles.addIcon}>＋</Text>
-            <Text style={styles.addText}>Add activity</Text>
-          </TouchableOpacity>
+        {/* Completion footer */}
+        {activities.length > 0 && doneCount === activities.length && (
+          <View style={styles.completionCard}>
+            <View style={styles.completionIconWrap}>
+              <Text style={{ fontSize: 20 }}>💡</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.completionTitle}>All set for today!</Text>
+              <Text style={styles.completionSubtitle}>You've planned all your activities.</Text>
+            </View>
+          </View>
         )}
 
         <View style={{ height: 32 }} />
@@ -917,50 +957,109 @@ export default function ItineraryScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F0F0F0' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  safe: { flex: 1, backgroundColor: '#FFF8F0' },
+  scroll: { flex: 1 },
+
+  headerOverlay: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 10 },
   title: { fontSize: 22, fontWeight: '900', color: '#1A1A1A' },
   tripSelector: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   tripSelectorText: { fontSize: 13, fontWeight: '600', color: '#4CAF50' },
-  calBtn: { padding: 8 },
-  dayNav: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  dayNavBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center' },
+  calBtn: {
+    width: 44, height: 44, borderRadius: 14, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+  },
+
+  // Hero
+  heroCard: {
+    marginHorizontal: 16, height: 180, borderRadius: 28, borderWidth: 1,
+    overflow: 'hidden', position: 'relative', marginBottom: 36,
+  },
+  heroBlobOne: { position: 'absolute', width: 150, height: 150, borderRadius: 999, top: -54, left: -36, opacity: 0.78 },
+  heroBlobTwo: { position: 'absolute', width: 180, height: 180, borderRadius: 999, right: -60, bottom: -76, opacity: 0.72 },
+  heroHillBack: { position: 'absolute', left: -24, right: -40, bottom: -32, height: 80, borderTopLeftRadius: 120, borderTopRightRadius: 140, transform: [{ rotate: '-2deg' }] },
+  heroHillFront: { position: 'absolute', left: 60, right: -16, bottom: -40, height: 84, borderTopLeftRadius: 120, borderTopRightRadius: 120, transform: [{ rotate: '3deg' }] },
+  heroPill: { position: 'absolute', top: 16, left: 16, borderRadius: 16, paddingHorizontal: 13, paddingVertical: 7, maxWidth: '70%' },
+  heroPillText: { fontSize: 13, fontWeight: '900' },
+
+  // Floating day selector
+  daySelectorCard: {
+    flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginTop: -46,
+    backgroundColor: '#fff', borderRadius: 24, paddingVertical: 12, paddingHorizontal: 10,
+    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 6,
+    marginBottom: 16,
+  },
+  dayNavBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#F8F4EF', alignItems: 'center', justifyContent: 'center' },
   dayNavBtnDisabled: { opacity: 0.3 },
-  dayNavArrow: { fontSize: 22, color: '#1A1A1A', fontWeight: '300' },
+  dayNavArrow: { fontSize: 20, color: '#1A1A1A', fontWeight: '400' },
   dayNavCenter: { flex: 1, alignItems: 'center' },
-  dayNavLabel: { fontSize: 15, fontWeight: '800', color: '#1A1A1A' },
-  dayNavDate: { fontSize: 12, color: '#888', marginTop: 1 },
-  todayBanner: { backgroundColor: '#E8F5E9', paddingVertical: 8, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#C8E6C9' },
+  dayNavLabel: { fontSize: 16, fontWeight: '900', color: '#1A1A1A' },
+  dayNavDate: { fontSize: 12, color: '#8A817A', marginTop: 2, fontWeight: '600' },
+
+  todayBanner: { backgroundColor: '#E8F5E9', marginHorizontal: 16, borderRadius: 14, paddingVertical: 8, alignItems: 'center', marginBottom: 12 },
   todayBannerText: { fontSize: 13, fontWeight: '600', color: '#2E7D32' },
-  scroll: { flex: 1 },
-  dayCard: { margin: 16, marginBottom: 8, backgroundColor: '#fff', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-  dayCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  dayCardTitle: { fontSize: 18, fontWeight: '800', color: '#1A1A1A' },
-  dayCardSub: { fontSize: 12, color: '#888', marginTop: 2 },
-  dayCardStats: { alignItems: 'flex-end' },
-  dayCardStatsText: { fontSize: 13, color: '#666', fontWeight: '600' },
-  dayCardDone: { fontSize: 12, color: '#4CAF50', marginTop: 2 },
-  activitiesWrap: { marginHorizontal: 16, backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
-  emptyDay: { padding: 32, alignItems: 'center' },
+
+  // Day summary card
+  dayCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginHorizontal: 16, marginBottom: 14, backgroundColor: '#fff', borderRadius: 20, padding: 14,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, elevation: 1,
+  },
+  dayCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  dayCardIconWrap: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#E8F5E9', alignItems: 'center', justifyContent: 'center' },
+  dayCardTitle: { fontSize: 15, fontWeight: '800', color: '#1A1A1A' },
+  dayCardSub: { fontSize: 12, color: '#8A817A', marginTop: 2, fontWeight: '600' },
+  dayCardRight: { alignItems: 'flex-end' },
+  dayCardStatsText: { fontSize: 13, color: '#4CAF50', fontWeight: '700' },
+  dayCardDone: { fontSize: 11, color: '#8A817A', marginTop: 2 },
+
+  // Activities timeline
+  activitiesWrap: { marginHorizontal: 16, marginBottom: 14 },
+  emptyDay: { padding: 32, alignItems: 'center', backgroundColor: '#fff', borderRadius: 20 },
   emptyDayTitle: { fontSize: 16, fontWeight: '700', color: '#1A1A1A', marginBottom: 4 },
-  emptyDaySubtitle: { fontSize: 13, color: '#888', marginBottom: 16 },
+  emptyDaySubtitle: { fontSize: 13, color: '#8A817A', marginBottom: 16 },
   emptyDayBtn: { backgroundColor: '#4CAF50', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10 },
   emptyDayBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  activityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 12, paddingHorizontal: 14 },
-  timeCol: { width: 44, alignItems: 'center', paddingTop: 2 },
-  time: { fontSize: 12, fontWeight: '700', color: '#444' },
-  connector: { width: 2, flex: 1, minHeight: 24, backgroundColor: '#E8E8E8', marginTop: 6 },
-  content: { flex: 1, paddingTop: 2 },
+
+  timelineRow: { flexDirection: 'row', alignItems: 'stretch' },
+  timelineCol: { width: 50, alignItems: 'center' },
+  time: { fontSize: 11, fontWeight: '700', color: '#8A817A', marginBottom: 4 },
+  timelineDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: '#4CAF50' },
+  timelineLine: { width: 2, flex: 1, backgroundColor: '#E5DFD7', marginTop: 4, marginBottom: 4, minHeight: 30 },
+
+  activityCardTouch: { flex: 1, marginLeft: 6, marginBottom: 12 },
+  activityCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff',
+    borderRadius: 18, padding: 12,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
+  },
+  content: { flex: 1 },
   activityTitle: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
-  subtitle: { fontSize: 12, color: '#888', marginTop: 2 },
-  categoryTag: { marginTop: 4 },
-  categoryText: { fontSize: 10, color: '#999', fontWeight: '600' },
-  checkCircle: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#4CAF50', alignItems: 'center', justifyContent: 'center' },
+  subtitle: { fontSize: 12, color: '#8A817A', marginTop: 2, fontWeight: '600' },
+
+  checkCircle: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#4CAF50', alignItems: 'center', justifyContent: 'center' },
+  checkCircleEmpty: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: '#E5DFD7' },
   checkMark: { fontSize: 13, color: '#fff', fontWeight: '800' },
-  divider: { paddingVertical: 2, paddingHorizontal: 14 },
-  addButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginHorizontal: 16, marginBottom: 8, backgroundColor: '#fff', borderRadius: 14, borderWidth: 1.5, borderColor: '#E0E0E0', borderStyle: 'dashed' },
+
+  overflowBtn: { paddingHorizontal: 4, paddingVertical: 4 },
+  overflowDots: { fontSize: 18, color: '#B8AEA5', fontWeight: '700' },
+
+  addButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 16, backgroundColor: 'transparent', borderRadius: 18,
+    borderWidth: 1.5, borderColor: '#4CAF50',
+  },
   addIcon: { fontSize: 18, color: '#4CAF50', fontWeight: '700' },
-  addText: { fontSize: 14, fontWeight: '600', color: '#4CAF50' },
+  addText: { fontSize: 15, fontWeight: '700', color: '#4CAF50' },
+
+  completionCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: 16, backgroundColor: '#E8F5E9', borderRadius: 20, padding: 16,
+  },
+  completionIconWrap: { width: 40, height: 40, borderRadius: 14, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  completionTitle: { fontSize: 15, fontWeight: '800', color: '#1A1A1A' },
+  completionSubtitle: { fontSize: 12, color: '#5C8A60', marginTop: 2, fontWeight: '600' },
+
   emptyBtn: { backgroundColor: '#4CAF50', borderRadius: 14, paddingHorizontal: 24, paddingVertical: 14 },
   emptyBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });
