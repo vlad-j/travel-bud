@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
+import { getDestinationHero } from '../../lib/destinationHero';
 
 type TripCarouselProps = {
   trips: any[];
@@ -36,6 +38,143 @@ function getTotalDays(startDate: string, endDate: string): number {
   const end = new Date(ey, em - 1, ed);
 
   return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+}
+
+function getDaysUntilStart(startDate: string): number {
+  const [sy, sm, sd] = startDate.split('-').map(Number);
+  const start = new Date(sy, sm - 1, sd);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const diff = Math.ceil(
+    (start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+  );
+
+  return Math.max(diff, 0);
+}
+
+function getCurrentDestinationIndex(destinations: any[], currentDay: number): number {
+  if (!destinations || destinations.length === 0) return 0;
+
+  let dayCounter = 0;
+
+  for (let i = 0; i < destinations.length; i += 1) {
+    const nights = destinations[i]?.nights ?? 1;
+    dayCounter += nights;
+
+    if (currentDay <= dayCounter) {
+      return i;
+    }
+  }
+
+  return destinations.length - 1;
+}
+
+function getTripMood(destinations: any[]): string {
+  const names = destinations
+    ?.map((d) => `${d?.name ?? ''} ${d?.country ?? ''}`.toLowerCase())
+    .join(' ') ?? '';
+
+  if (names.includes('phi phi') || names.includes('phuket') || names.includes('krabi') || names.includes('bali') || names.includes('island')) {
+    return '🏝 Island journey';
+  }
+
+  if (names.includes('bangkok') || names.includes('chiang mai') || names.includes('kyoto') || names.includes('rome') || names.includes('athens')) {
+    return '🏯 Culture adventure';
+  }
+
+  if (names.includes('bromo') || names.includes('khao sok') || names.includes('alps') || names.includes('fuji') || names.includes('mount')) {
+    return '🥾 Nature explorer';
+  }
+
+  if (destinations?.length >= 4) {
+    return '✨ Multi-stop adventure';
+  }
+
+  return '✨ Travel journey';
+}
+
+function getDestinationSummary(destinations: any[]): string {
+  if (!destinations || destinations.length === 0) return 'No destinations yet';
+
+  const visible = destinations.slice(0, 3).map((d) => d.name).filter(Boolean);
+  const remaining = destinations.length - visible.length;
+
+  if (remaining > 0) {
+    return `${visible.join(' • ')} +${remaining}`;
+  }
+
+  return visible.join(' • ');
+}
+
+function TripRouteMiniMap({
+  count,
+  currentIndex,
+  color,
+}: {
+  count: number;
+  currentIndex: number;
+  color: string;
+}) {
+  const visibleCount = Math.min(Math.max(count, 1), 5);
+
+  const points = [
+    { x: 14, y: 18 },
+    { x: 48, y: 18 },
+    { x: 72, y: 42 },
+    { x: 106, y: 42 },
+    { x: 130, y: 20 },
+  ].slice(0, visibleCount);
+
+  const path = points
+    .map((point, index) => {
+      if (index === 0) return `M ${point.x} ${point.y}`;
+      return `L ${point.x} ${point.y}`;
+    })
+    .join(' ');
+
+  return (
+    <View style={styles.routeMapWrap}>
+      <Svg width={144} height={62} viewBox="0 0 144 62">
+        {points.length > 1 && (
+          <Path
+            d={path}
+            stroke={color}
+            strokeWidth={5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={0.35}
+            fill="none"
+          />
+        )}
+
+        {points.map((point, index) => {
+          const isPast = index < currentIndex;
+          const isCurrent = index === currentIndex;
+          const isFuture = index > currentIndex;
+
+          return (
+            <Circle
+              key={`${point.x}-${point.y}`}
+              cx={point.x}
+              cy={point.y}
+              r={isCurrent ? 8 : 6}
+              fill={isFuture ? '#FFFCFA' : color}
+              stroke={color}
+              strokeWidth={isCurrent ? 4 : 3}
+              opacity={isPast || isCurrent ? 1 : 0.75}
+            />
+          );
+        })}
+      </Svg>
+
+      {count > 5 && (
+        <View style={styles.moreBadge}>
+          <Text style={styles.moreBadgeText}>+{count - 5}</Text>
+        </View>
+      )}
+    </View>
+  );
 }
 
 export default function TripCarousel({
@@ -109,63 +248,102 @@ export default function TripCarousel({
           }}
           renderItem={({ item }) => {
             const active = item.computedStatus === 'active';
-            const dest = item.destinations?.[0] ?? null;
+            const destinations = item.destinations ?? [];
+            const firstDestination = destinations[0] ?? null;
+
+            const heroTheme = getDestinationHero(
+              firstDestination?.name,
+              firstDestination?.country,
+            );
+
             const dayNum = getDayNumber(item.start_date);
             const totalDays = getTotalDays(item.start_date, item.end_date);
+            const daysUntilStart = getDaysUntilStart(item.start_date);
+            const safeDay = Math.min(dayNum, totalDays);
+            const daysLeft = Math.max(totalDays - safeDay, 0);
+            const progress = totalDays > 0 ? Math.min(safeDay / totalDays, 1) : 0;
+            const progressPercent = Math.round(progress * 100);
+
+            const currentDestinationIndex = getCurrentDestinationIndex(
+              destinations,
+              safeDay,
+            );
+
+            const mood = getTripMood(destinations);
+            const destinationSummary = getDestinationSummary(destinations);
 
             return (
               <TouchableOpacity
-                style={[styles.tripCard, { width: cardWidth }]}
+                style={[
+                  styles.tripCard,
+                  {
+                    width: cardWidth,
+                    backgroundColor: heroTheme.hillBack,
+                    borderColor: heroTheme.border,
+                  },
+                ]}
                 onPress={() => onOpenTrip(item.id)}
                 activeOpacity={0.9}
               >
                 <View style={styles.tripCardContent}>
-                  <View style={styles.tripHeaderRow}>
-                    <View style={styles.tripTextWrap}>
-                      <Text style={styles.tripName} numberOfLines={1}>
-                        {item.name}
-                      </Text>
+                  <View style={styles.topRow}>
+  <View style={styles.mainInfo}>
+    <Text style={styles.tripName} numberOfLines={1}>
+      {item.name}
+    </Text>
 
-                      <View style={styles.tripMetaRow}>
-                        <View
-                          style={[
-                            styles.statusDot,
-                            { backgroundColor: active ? '#4CAF50' : '#999' },
-                          ]}
-                        />
+    <Text style={styles.tripMood} numberOfLines={1}>
+      {mood}
+    </Text>
+  </View>
 
-                        <Text
-                          style={[
-                            styles.tripMeta,
-                            { color: active ? '#4CAF50' : '#777' },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {active
-                            ? `Day ${dayNum} of ${totalDays}`
-                            : item.computedStatus?.toUpperCase()}
-                        </Text>
-                      </View>
+  <View style={styles.mapSlot}>
+    <TripRouteMiniMap
+      count={destinations.length}
+      currentIndex={currentDestinationIndex}
+      color={heroTheme.text}
+    />
+  </View>
+</View>
+
+                  <View style={styles.progressBlock}>
+                    <View style={styles.progressHeader}>
+ <Text style={styles.dayText}>
+  {active ? `Day ${safeDay} of ${totalDays}` : `Departs in ${daysUntilStart} days`}
+</Text>
+
+<Text style={styles.daysLeftText}>
+  {active ? `${daysLeft} days left` : `${totalDays} days total`}
+</Text>
                     </View>
 
-                    <View style={styles.chevronBubble}>
-                      <Text style={styles.chevron}>›</Text>
+                    <View style={styles.progressTrack}>
+                      <View
+                        style={[
+                          styles.progressFill,
+                          {
+                            width: `${progressPercent}%`,
+                            backgroundColor: heroTheme.text,
+                          },
+                        ]}
+                      />
                     </View>
                   </View>
 
-                  {dest ? (
-                    <View style={styles.destinationRow}>
-                      <Text style={styles.locationPin}>📍</Text>
-                      <Text style={styles.destinationText} numberOfLines={1}>
-                        {dest.name}
-                        {dest.country ? `, ${dest.country}` : ''}
+                  <View style={styles.destinationBlock}>
+                    <View style={styles.destinationTopRow}>
+                      <Text style={styles.destinationCount}>
+                        📍 {destinations.length || 0} destinations
+                      </Text>
+
+                      <Text style={styles.viewText}>
+                        View →
                       </Text>
                     </View>
-                  ) : null}
 
-                  <View style={styles.bottomAccentRow}>
-                    <View style={styles.accentLine} />
-                    <Text style={styles.tapHint}>View trip details</Text>
+                    <Text style={styles.destinationText} numberOfLines={1}>
+                      {destinationSummary}
+                    </Text>
                   </View>
                 </View>
               </TouchableOpacity>
@@ -252,8 +430,8 @@ const styles = StyleSheet.create({
   },
 
   carouselShell: {
-    height: 160,
-    marginTop: -22,
+    height: 220,
+    marginTop: -24,
   },
 
   listContent: {
@@ -261,69 +439,149 @@ const styles = StyleSheet.create({
   },
 
   tripCard: {
-    height: 150,
-    backgroundColor: '#FFFCFA',
-    borderRadius: 26,
+    height: 210,
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: '#F3EFEA',
     shadowColor: '#000',
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.14,
     shadowRadius: 18,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 7,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+    overflow: 'hidden',
   },
 
   tripCardContent: {
     flex: 1,
     paddingHorizontal: 22,
-    paddingTop: 18,
-    paddingBottom: 16,
+    paddingTop: 20,
+    paddingBottom: 18,
     justifyContent: 'space-between',
   },
 
-  tripHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
+topRow: {
+  flexDirection: 'row',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 10,
+},
 
-  tripTextWrap: {
-    flex: 1,
-  },
+mainInfo: {
+  flex: 1,
+  maxWidth: '58%',
+},
 
   tripName: {
-    fontSize: 23,
-    fontWeight: '800',
+    fontSize: 24,
+    fontWeight: '900',
     color: '#1A1A1A',
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
   },
 
-  tripMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    marginTop: 7,
+  tripMood: {
+    marginTop: 5,
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#3D2B1F',
+    opacity: 0.78,
   },
 
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
+ mapSlot: {
+  width: 124,
+  alignItems: 'flex-end',
+},
 
-  tripMeta: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
+routeMapWrap: {
+  width: 124,
+  height: 58,
+  position: 'relative',
+  marginTop: -2,
+},
 
-  chevronBubble: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F7F2EC',
+  moreBadge: {
+    position: 'absolute',
+    right: 2,
+    bottom: 2,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFCFA',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
+    paddingHorizontal: 5,
+  },
+
+  moreBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#1A1A1A',
+  },
+
+  progressBlock: {
+    marginTop: 8,
+  },
+
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  dayText: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#1A1A1A',
+  },
+
+  daysLeftText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#3D2B1F',
+    opacity: 0.72,
+  },
+
+progressTrack: {
+  height: 8,
+  borderRadius: 999,
+  backgroundColor: 'rgba(255,255,255,0.55)',
+  overflow: 'hidden',
+  marginTop: 8,
+},
+
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+
+  destinationBlock: {
+    marginTop: 8,
+  },
+
+  destinationTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  destinationCount: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#1A1A1A',
+    opacity: 0.78,
+  },
+
+  viewText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#1A1A1A',
+    opacity: 0.68,
+  },
+
+  destinationText: {
+    marginTop: 5,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#3D2B1F',
+    opacity: 0.78,
   },
 
   chevron: {
@@ -333,49 +591,11 @@ const styles = StyleSheet.create({
     marginTop: -1,
   },
 
-  destinationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
-  },
-
-  locationPin: {
-    fontSize: 14,
-  },
-
-  destinationText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#5F5A55',
-    fontWeight: '600',
-  },
-
-  bottomAccentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 10,
-  },
-
-  accentLine: {
-    flex: 1,
-    height: 5,
-    borderRadius: 99,
-    backgroundColor: '#EEF8EF',
-  },
-
-  tapHint: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#8A817A',
-  },
-
   paginationRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 5,
     marginBottom: 4,
     gap: 6,
   },

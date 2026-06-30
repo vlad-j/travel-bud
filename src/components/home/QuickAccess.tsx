@@ -6,49 +6,40 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
+import { useCurrentTrip } from '../../context/TripContext';
+import { getDestinationHero } from '../../lib/destinationHero';
 
 const QUICK_PILLS = [
-  {
-    label: 'Packing',
-    icon: require('../../../assets/icons/packing.png'),
-    screen: 'Packing' as const,
-    bg: '#F7FCF7',
-    border: '#E2F0E4',
-  },
-  {
-    label: 'Documents',
-    icon: require('../../../assets/icons/documents.png'),
-    screen: 'Documents' as const,
-    bg: '#FFF9EF',
-    border: '#F3E4C4',
-  },
   {
     label: 'Stays',
     icon: require('../../../assets/icons/accom.png'),
     screen: 'Accommodation' as const,
-    bg: '#FAF5FF',
-    border: '#E8D9F7',
   },
   {
     label: 'Transport',
     icon: require('../../../assets/icons/transportation.png'),
     screen: 'Transport' as const,
-    bg: '#F4FAFF',
-    border: '#D8EAF8',
+  },
+  {
+    label: 'Documents',
+    icon: require('../../../assets/icons/documents.png'),
+    screen: 'Documents' as const,
+  },
+  {
+    label: 'Packing',
+    icon: require('../../../assets/icons/packing.png'),
+    screen: 'Packing' as const,
   },
   {
     label: 'Memories',
     icon: require('../../../assets/icons/memories.png'),
     screen: 'MemoriesRecap' as const,
-    bg: '#FFF7F1',
-    border: '#F2DDCE',
   },
   {
     label: 'Settings',
     icon: require('../../../assets/icons/tripSettings.png'),
     screen: 'TripSettings' as const,
-    bg: '#F8F8F8',
-    border: '#E5E5E5',
   },
 ];
 
@@ -58,29 +49,65 @@ type Props = {
 };
 
 export default function QuickAccess({ tripId, onNavigate }: Props) {
+  const { currentDestination } = useCurrentTrip();
+
+  const heroTheme = getDestinationHero(
+    currentDestination?.name,
+    currentDestination?.country,
+  );
+
   return (
-    <View style={styles.card}>
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: heroTheme.background,
+          borderColor: heroTheme.border,
+        },
+      ]}
+    >
+      <Svg
+        width="100%"
+        height="100%"
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      >
+        <Circle
+          cx="18%"
+          cy="12%"
+          r="56"
+          fill={heroTheme.blobOne}
+          opacity={0.42}
+        />
+        <Circle
+          cx="92%"
+          cy="82%"
+          r="78"
+          fill={heroTheme.blobTwo}
+          opacity={0.38}
+        />
+        <Path
+          d="M18 142 C74 104, 120 174, 190 132 S298 108, 360 154"
+          stroke={heroTheme.accent}
+          strokeWidth="18"
+          strokeLinecap="round"
+          opacity={0.10}
+          fill="none"
+        />
+      </Svg>
+
       <View style={styles.grid}>
         {QUICK_PILLS.map((pill) => (
           <TouchableOpacity
             key={pill.label}
-            style={[
-              styles.tile,
-              {
-                backgroundColor: pill.bg,
-                borderColor: pill.border,
-              },
-            ]}
+            style={styles.tile}
             onPress={() => onNavigate(pill.screen, { tripId })}
-            activeOpacity={0.8}
+            activeOpacity={0.78}
           >
-            <View style={styles.iconWrap}>
-              <Image
-                source={pill.icon}
-                resizeMode="contain"
-                style={styles.icon}
-              />
-            </View>
+            <Image
+              source={pill.icon}
+              style={styles.icon}
+            />
 
             <Text numberOfLines={1} style={styles.label}>
               {pill.label}
@@ -97,56 +124,43 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 10,
     marginBottom: 14,
-    backgroundColor: '#FFFCFA',
-    borderRadius: 24,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 10,
+    borderRadius: 28,
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 14,
     borderWidth: 1,
-    borderColor: '#F3EFEA',
     shadowColor: '#000',
-    shadowOpacity: 0.045,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 2,
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
+    overflow: 'hidden',
   },
 
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 8,
+    rowGap: 10,
   },
 
   tile: {
     width: '31.5%',
     height: 92,
-    borderRadius: 18,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: 4,
-    paddingBottom: 4,
-    overflow: 'hidden',
-  },
-
-  iconWrap: {
-    width: 74,
-    height: 66,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: -2,
   },
 
   icon: {
-    width: 74,
-    height: 74,
+    width: 76,
+    height: 76,
+    marginBottom: -8,
   },
 
   label: {
     fontSize: 12,
     lineHeight: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#303030',
     textAlign: 'center',
   },
