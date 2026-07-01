@@ -10,6 +10,10 @@ interface Props {
   onGoToLogin: () => void;
 }
 
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export default function RegisterForm({ onGoToLogin }: Props) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -20,20 +24,13 @@ export default function RegisterForm({ onGoToLogin }: Props) {
     visible: false, title: '', message: '', variant: 'error',
   });
 
-  async function handleRegister() {
-    setBanner({ visible: false, title: '', message: '', variant: 'error' });
-    setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: name } },
-    });
-    if (error) {
-      setBanner({ visible: true, title: "Couldn't create account", message: error.message, variant: 'error' });
-    } else {
-      setBanner({ visible: true, title: 'Account created 🎉', message: 'Check your email to confirm your account!', variant: 'success' });
-    }
-    setLoading(false);
+async function handleRegister() {
+  setBanner({ visible: false, title: '', message: '', variant: 'error' });
+  if (!isValidEmail(email)) {
+    setBanner({ visible: true, title: 'Invalid email', message: 'Please enter a valid email address.', variant: 'error' });
+    return;
+  }
+  setLoading(true);
   }
 
   return (

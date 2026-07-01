@@ -14,6 +14,7 @@ import { searchLocations } from '../lib/locationService';
 import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
 import { useRealtimeSync } from '../../hooks/useRealtimeSync';
 import { getDestinationHero } from '../lib/destinationHero';
+import AddActivityModal from '../components/activity/AddActivityModal';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function localDateStr(date: Date): string {
@@ -401,207 +402,6 @@ function EditActivityModal({ visible, activity, onClose, onSaved }: {
   );
 }
 
-// ─── Add Activity Modal ───────────────────────────────────────────────────────
-function AddActivityModal({ visible, onClose, tripId, selectedDate, dayNumber, onAdded }: {
-  visible: boolean; onClose: () => void; tripId: string;
-  selectedDate: string; dayNumber: number; onAdded: () => void;
-}) {
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('activity');
-  const [time, setTime] = useState('');
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [location, setLocation] = useState('');
-  const [locationSuggestions, setLocationSuggestions] = useState<string[]>([]);
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-  const locationTimeout = useRef<any>(null);
-
-  async function handleLocationChange(text: string) {
-    setLocation(text);
-    if (locationTimeout.current) clearTimeout(locationTimeout.current);
-    if (text.length >= 3) {
-      locationTimeout.current = setTimeout(async () => {
-        const results = await searchLocations(text);
-        setLocationSuggestions(results);
-      }, 1000);
-    } else {
-      setLocationSuggestions([]);
-    }
-  }
-
-  async function handleAdd() {
-    if (!title.trim()) return;
-    setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setSaving(false); return; }
-    const { error } = await supabase.from('activities').insert({
-      trip_id: tripId, title: title.trim(), category,
-      date: selectedDate, time: time || null, location: location || null,
-      notes: notes || null, status: 'upcoming', created_by: user.id,
-    });
-    if (error) { Alert.alert('Error', error.message); }
-    else {
-      setTitle(''); setCategory('activity'); setTime('');
-      setLocation(''); setLocationSuggestions([]); setNotes('');
-      onAdded(); onClose();
-    }
-    setSaving(false);
-  }
-
-  const displayDate = formatDisplayDate(selectedDate);
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={am.overlay}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={am.kvWrapper}>
-          <View style={am.sheet}>
-            {/* Sticky Header */}
-            <View style={am.header}>
-              <TouchableOpacity onPress={onClose} style={am.cancelBtn}>
-                <Text style={am.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <Text style={am.headerTitle}>Add Activity</Text>
-              <TouchableOpacity
-                onPress={handleAdd}
-                disabled={!title.trim() || saving}
-                style={[am.saveBtn, (!title.trim() || saving) && am.saveBtnDisabled]}
-              >
-                {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={am.saveText}>Save</Text>}
-              </TouchableOpacity>
-            </View>
-
-            {/* Context */}
-            <View style={am.contextBar}>
-              <Text style={am.contextText}>📅 Day {dayNumber} · {displayDate}</Text>
-            </View>
-
-            <ScrollView style={am.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <Text style={am.fieldLabel}>Title</Text>
-              <TextInput
-                style={am.input}
-                placeholder="e.g. Sunrise at Mount Batur"
-                placeholderTextColor="#C0C0C0"
-                value={title}
-                onChangeText={setTitle}
-                autoFocus
-              />
-
-              <Text style={am.fieldLabel}>Category</Text>
-              <View style={am.catGrid}>
-                {CATEGORY_OPTIONS.map((opt) => (
-                  <TouchableOpacity
-                    key={opt.label}
-                    style={[am.catChip, category === opt.label && am.catChipActive]}
-                    onPress={() => setCategory(opt.label)}
-                  >
-                    <Text style={{ fontSize: 18 }}>{opt.emoji}</Text>
-                    <Text style={[am.catChipText, category === opt.label && am.catChipTextActive]}>{opt.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={am.fieldLabel}>Time</Text>
-              <TouchableOpacity
-                style={[am.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
-                onPress={() => setShowTimePicker(true)}
-              >
-                <Text style={{ fontSize: 15, color: time ? '#1A1A1A' : '#C0C0C0' }}>{time || 'Pick time'}</Text>
-                <Text style={{ fontSize: 16 }}>🕐</Text>
-              </TouchableOpacity>
-              {showTimePicker && (
-                <DateTimePicker
-                  value={(() => { const d = new Date(); if (time) { const [h, m] = time.split(':'); d.setHours(+h, +m); } return d; })()}
-                  mode="time" display={Platform.OS === 'ios' ? 'spinner' : 'default'} is24Hour={true}
-                  onChange={(_, date) => {
-                    setShowTimePicker(Platform.OS === 'ios');
-                    if (date) {
-                      setTime(`${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`);
-                    }
-                  }}
-                />
-              )}
-
-              <Text style={am.fieldLabel}>Location</Text>
-              <TextInput
-                style={am.input}
-                placeholder="e.g. Ubud, Bali"
-                placeholderTextColor="#C0C0C0"
-                value={location}
-                onChangeText={handleLocationChange}
-              />
-              {locationSuggestions.length > 0 && (
-                <View style={am.suggestions}>
-                  {locationSuggestions.map((s, i) => (
-                    <TouchableOpacity key={i} style={am.suggestionRow} onPress={() => { setLocation(s); setLocationSuggestions([]); }}>
-                      <Text style={{ fontSize: 14 }}>📍</Text>
-                      <Text style={am.suggestionText} numberOfLines={2}>{s}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-
-              <Text style={am.fieldLabel}>Notes <Text style={am.optional}>(optional)</Text></Text>
-              <TextInput
-                style={[am.input, am.textArea]}
-                placeholder="Add any extra details..."
-                placeholderTextColor="#C0C0C0"
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-                numberOfLines={3}
-              />
-              <View style={{ height: 100 }} />
-            </ScrollView>
-
-            {/* Sticky Add Button */}
-            <View style={am.stickyBottom}>
-              <TouchableOpacity
-                style={[am.addBtn, (!title.trim() || saving) && am.addBtnDisabled]}
-                onPress={handleAdd}
-                disabled={!title.trim() || saving}
-              >
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={am.addBtnText}>＋ Add Activity</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
-  );
-}
-
-const am = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  kvWrapper: { flex: 1, justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '93%' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  headerTitle: { fontSize: 16, fontWeight: '800', color: '#1A1A1A' },
-  cancelBtn: { padding: 4 },
-  cancelText: { fontSize: 15, color: '#888', fontWeight: '500' },
-  saveBtn: { backgroundColor: '#4CAF50', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7 },
-  saveBtnDisabled: { backgroundColor: '#C8E6C9' },
-  saveText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  contextBar: { backgroundColor: '#F1F8E9', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E8F5E9' },
-  contextText: { fontSize: 13, color: '#2E7D32', fontWeight: '600' },
-  scroll: { flex: 1, paddingHorizontal: 16 },
-  fieldLabel: { fontSize: 12, fontWeight: '700', color: '#888', letterSpacing: 0.5, marginBottom: 6, marginTop: 16 },
-  optional: { fontWeight: '400', color: '#BBB' },
-  input: { backgroundColor: '#F5F5F5', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: '#1A1A1A', borderWidth: 1, borderColor: '#EBEBEB' },
-  textArea: { height: 80, textAlignVertical: 'top' },
-  catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  catChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: '#F5F5F5', borderWidth: 1, borderColor: '#EBEBEB' },
-  catChipActive: { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' },
-  catChipText: { fontSize: 12, fontWeight: '600', color: '#666' },
-  catChipTextActive: { color: '#4CAF50' },
-  suggestions: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#F0F0F0', marginTop: 4, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, elevation: 3 },
-  suggestionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
-  suggestionText: { fontSize: 13, color: '#1A1A1A', flex: 1 },
-  stickyBottom: { padding: 16, borderTopWidth: 1, borderTopColor: '#F0F0F0', backgroundColor: '#fff' },
-  addBtn: { backgroundColor: '#4CAF50', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  addBtnDisabled: { backgroundColor: '#C8E6C9' },
-  addBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
-});
-
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ItineraryScreen() {
   const navigation = useNavigation<any>();
@@ -933,6 +733,7 @@ export default function ItineraryScreen() {
         selectedDate={selectedDate}
         dayNumber={selectedDay}
         onAdded={loadActivities}
+        destinationContext={heroDestination ? { name: heroDestination.name, country: heroDestination.country ?? null, isCurrent: true } : null}
       />
 
       <TripSelectorModal

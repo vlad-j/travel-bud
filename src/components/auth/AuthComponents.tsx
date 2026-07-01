@@ -1,6 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, TextInputProps } from 'react-native';
-
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, TextInputProps, ActivityIndicator } from 'react-native';
 export function AuthCard({ children }: { children: React.ReactNode }) {
   return <View style={styles.card}>{children}</View>;
 }
@@ -32,7 +31,7 @@ export function PrimaryButton({ label, onPress, loading, disabled }: {
       disabled={disabled || loading}
       activeOpacity={0.85}
     >
-      <Text style={styles.primaryBtnText}>{loading ? '...' : label}</Text>
+      {loading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.primaryBtnText}>{label}</Text>}
     </TouchableOpacity>
   );
 }

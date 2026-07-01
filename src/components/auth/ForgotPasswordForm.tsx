@@ -7,6 +7,10 @@ interface Props {
   onGoToLogin: () => void;
 }
 
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export default function ForgotPasswordForm({ onGoToLogin }: Props) {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -17,6 +21,10 @@ export default function ForgotPasswordForm({ onGoToLogin }: Props) {
   async function handleSend() {
     if (!email.trim()) {
       setBanner({ visible: true, title: 'Enter your email', message: 'Please enter your email address first.', variant: 'error' });
+      return;
+    }
+    if (!isValidEmail(email)) {
+      setBanner({ visible: true, title: 'Invalid email', message: 'Please enter a valid email address.', variant: 'error' });
       return;
     }
     setBanner({ visible: false, title: '', message: '', variant: 'error' });

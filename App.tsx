@@ -2,6 +2,7 @@ import 'react-native-gesture-handler';
 import { registerRootComponent } from 'expo';
 import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { Session } from '@supabase/supabase-js';
@@ -51,20 +52,24 @@ function App() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <StatusBar style="dark" translucent backgroundColor="transparent" />
-        <ActivityIndicator size="large" color="#4CAF50" />
-      </View>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <StatusBar style="dark" translucent backgroundColor="transparent" />
+          <ActivityIndicator size="large" color="#4CAF50" />
+        </View>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <NavigationContainer>
-      <TripProvider>
-        <StatusBar style="dark" translucent backgroundColor="transparent" />
-        {session ? <AppNavigator /> : <AuthNavigator />}
-      </TripProvider>
-    </NavigationContainer>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <NavigationContainer>
+        <TripProvider>
+          <StatusBar style="dark" translucent backgroundColor="transparent" />
+          {session ? <AppNavigator /> : <AuthNavigator />}
+        </TripProvider>
+      </NavigationContainer>
+    </GestureHandlerRootView>
   );
 }
 

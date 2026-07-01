@@ -12,6 +12,10 @@ interface Props {
   onLoginSuccess?: () => void;
 }
 
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export default function LoginForm({ onGoToRegister, onGoToForgotPassword, onLoginSuccess }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,17 +24,21 @@ export default function LoginForm({ onGoToRegister, onGoToForgotPassword, onLogi
   const [rememberMe, setRememberMe] = useState(true);
   const [banner, setBanner] = useState<{ visible: boolean; title: string; message: string }>({ visible: false, title: '', message: '' });
 
-  async function handleLogin() {
-    setBanner({ visible: false, title: '', message: '' });
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setBanner({ visible: true, title: "Couldn't sign in", message: 'Please check your email or password.' });
-    } else {
-      onLoginSuccess?.();
-    }
-    setLoading(false);
+async function handleLogin() {
+  setBanner({ visible: false, title: '', message: '' });
+  if (!isValidEmail(email)) {
+    setBanner({ visible: true, title: 'Invalid email', message: 'Please enter a valid email address.' });
+    return;
   }
+  setLoading(true);
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    setBanner({ visible: true, title: "Couldn't sign in", message: 'Please check your email or password.' });
+  } else {
+    onLoginSuccess?.();
+  }
+  setLoading(false);
+}
 
   return (
     <>
