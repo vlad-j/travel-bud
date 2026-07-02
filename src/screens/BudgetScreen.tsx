@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Modal, TextInput, Alert,
+  ActivityIndicator, Modal, Alert, Animated, Easing, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
@@ -10,64 +10,83 @@ import { Sparkle, Dot } from '../components/TravelDecorations';
 import { supabase } from '../lib/supabase';
 import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
 import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRealtimeSync } from '../../hooks/useRealtimeSync';
 import { getDestinationHero } from '../lib/destinationHero';
 import AddExpenseModal from '../components/budget/AddExpenseModal';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const CATEGORY_META: Record<string, { emoji: string; color: string; bg: string; label: string }> = {
-  food:           { emoji: '🍜', color: '#FF9800', bg: '#FFF8E1', label: 'Food' },
-  coffee:         { emoji: '☕', color: '#795548', bg: '#EFEBE9', label: 'Coffee' },
-  drinks:         { emoji: '🍷', color: '#9C27B0', bg: '#F3E5F5', label: 'Drinks' },
-  groceries:      { emoji: '🛒', color: '#2196F3', bg: '#E3F2FD', label: 'Groceries' },
-  transport:      { emoji: '🚗', color: '#F44336', bg: '#FFEBEE', label: 'Transport' },
-  accommodation:  { emoji: '🏨', color: '#3F51B5', bg: '#E8EAF6', label: 'Accommodation' },
-  activity:       { emoji: '🏃', color: '#4CAF50', bg: '#E8F5E9', label: 'Activities' },
-  attraction:     { emoji: '🗽', color: '#009688', bg: '#E0F2F1', label: 'Attractions' },
-  flight:         { emoji: '✈️', color: '#00BCD4', bg: '#E0F7FA', label: 'Flights' },
-  shopping:       { emoji: '🛍️', color: '#E91E63', bg: '#FCE4EC', label: 'Shopping' },
-  exchange_fees:  { emoji: '💱', color: '#673AB7', bg: '#EDE7F6', label: 'Exchange Fees' },
-  atm_fees:       { emoji: '🏧', color: '#607D8B', bg: '#ECEFF1', label: 'ATM Fees' },
-  laundry:        { emoji: '🧺', color: '#03A9F4', bg: '#E1F5FE', label: 'Laundry' },
-  other_income:   { emoji: '💴', color: '#FF9800', bg: '#FFF3E0', label: 'Other Income' },
-  salary:         { emoji: '🏦', color: '#4CAF50', bg: '#E8F5E9', label: 'Salary' },
-  gifts:          { emoji: '🎁', color: '#9C27B0', bg: '#F3E5F5', label: 'Gifts' },
-  other:          { emoji: '📦', color: '#888888', bg: '#F5F5F5', label: 'Other' },
+// ─── Palette ────────────────────────────────────────────────────────────────
+// Premium, warm, "travel companion" palette — cream undertones on a white
+// canvas, a deep editorial green for trust/money, amber + coral for status.
+const COLORS = {
+  bg: '#FFFFFF',
+  cream: '#FBF7F0',
+  creamDark: '#F4EDDD',
+  ink: '#1B1B1F',
+  inkSoft: '#6E6B66',
+  inkFaint: '#A6A29A',
+  border: '#F0EBDF',
+  green: '#1F6D4C',
+  greenBright: '#2FA36E',
+  greenSoft: '#E7F3EC',
+  amber: '#B8752B',
+  amberSoft: '#FBF0DE',
+  red: '#C0483A',
+  redSoft: '#FBEAE6',
+  gold: '#C9A24B',
 };
 
-const EXPENSE_CATEGORIES = Object.entries(CATEGORY_META).map(([label, v]) => ({ label, emoji: v.emoji }));
+// ─── Constants ────────────────────────────────────────────────────────────────
+const CATEGORY_META: Record<string, { emoji: string; color: string; bg: string; label: string }> = {
+  food:           { emoji: '🍜', color: '#D98A2B', bg: '#FBF1E1', label: 'Food & Drinks' },
+  coffee:         { emoji: '☕', color: '#8A5A3B', bg: '#F3EAE3', label: 'Coffee' },
+  drinks:         { emoji: '🍷', color: '#9C4F9C', bg: '#F6EAF6', label: 'Drinks' },
+  groceries:      { emoji: '🛒', color: '#2E7FB8', bg: '#E7F1FA', label: 'Groceries' },
+  transport:      { emoji: '🚗', color: '#2E7FB8', bg: '#E7F1FA', label: 'Transport' },
+  accommodation:  { emoji: '🏨', color: '#6C5CB0', bg: '#EEEAF9', label: 'Hotels' },
+  activity:       { emoji: '🎟️', color: '#2FA36E', bg: '#E7F3EC', label: 'Activities' },
+  attraction:     { emoji: '🗽', color: '#1F9490', bg: '#E4F3F2', label: 'Attractions' },
+  flight:         { emoji: '✈️', color: '#2394A8', bg: '#E4F3F5', label: 'Flights' },
+  shopping:       { emoji: '🛍️', color: '#C24E77', bg: '#FBE9F0', label: 'Shopping' },
+  exchange_fees:  { emoji: '💱', color: '#6C5CB0', bg: '#EEEAF9', label: 'Exchange Fees' },
+  atm_fees:       { emoji: '🏧', color: '#6B7280', bg: '#EEEFF1', label: 'ATM Fees' },
+  laundry:        { emoji: '🧺', color: '#2E9BC7', bg: '#E5F3FA', label: 'Laundry' },
+  other_income:   { emoji: '💴', color: '#D98A2B', bg: '#FBF1E1', label: 'Other Income' },
+  salary:         { emoji: '🏦', color: '#2FA36E', bg: '#E7F3EC', label: 'Salary' },
+  gifts:          { emoji: '🎁', color: '#9C4F9C', bg: '#F6EAF6', label: 'Gifts' },
+  other:          { emoji: '📦', color: '#8A8680', bg: '#F1EFEA', label: 'Other' },
+};
 
-const TABS = ['Overview', 'Timeline', 'Settlement'];
+const FAB_MENU = [
+  { key: 'add',    emoji: '🍜', label: 'Add Expense',            enabled: true },
+  { key: 'scan',   emoji: '📷', label: 'Scan Receipt',           enabled: false },
+  { key: 'import',  emoji: '✈️', label: 'Import Booking',         enabled: false },
+  { key: 'email',  emoji: '📧', label: 'Import Email',           enabled: false },
+  { key: 'bank',   emoji: '💳', label: 'Import Bank Transaction', enabled: false },
+];
 
 function localDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
-
 function getTodayStr(): string {
   const now = new Date();
   return localDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
 }
-
 function getYesterdayStr(): string {
   const now = new Date();
   return localDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
 }
-
-// ─── Exchange Rate ────────────────────────────────────────────────────────────
-async function getExchangeRate(from: string, to: string): Promise<number> {
-  if (from === to) return 1;
+function formatTime(dateStr?: string): string {
+  if (!dateStr) return '';
   try {
-    const res = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=${to}`);
-    const data = await res.json();
-    return data.rates?.[to] ?? 1;
-  } catch {
-    return 1;
-  }
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  } catch { return ''; }
 }
 
 // ─── Settlement Calculator ────────────────────────────────────────────────────
 function calculateSettlement(expenses: any[], members: any[], currency: string) {
-  // Build balance map: how much each person paid vs owes
   const balance: Record<string, number> = {};
   members.forEach(m => { balance[m.id] = 0; });
 
@@ -75,28 +94,20 @@ function calculateSettlement(expenses: any[], members: any[], currency: string) 
     const amount = Number(expense.amount);
     const paidBy = expense.paid_by;
     const splitWith: string[] = expense.split_with ?? [];
-
     if (!paidBy) continue;
 
     if (splitWith.length === 0) {
-      // No split — payer paid for themselves
       balance[paidBy] = (balance[paidBy] ?? 0) + 0;
     } else {
-      // Split between paidBy + splitWith
       const participants = [paidBy, ...splitWith];
       const share = amount / participants.length;
-
-      // Payer gets credited for the full amount
       balance[paidBy] = (balance[paidBy] ?? 0) + amount;
-
-      // Each participant owes their share
       for (const participantId of participants) {
         balance[participantId] = (balance[participantId] ?? 0) - share;
       }
     }
   }
 
-  // Calculate who owes whom
   const debts: { from: string; to: string; amount: number }[] = [];
   const debtors = members.filter(m => (balance[m.id] ?? 0) < -0.01);
   const creditors = members.filter(m => (balance[m.id] ?? 0) > 0.01);
@@ -109,19 +120,79 @@ function calculateSettlement(expenses: any[], members: any[], currency: string) 
     const debt = debtorBalances[i];
     const credit = creditorBalances[j];
     const payment = Math.min(debt.amount, credit.amount);
-
-    if (payment > 0.01) {
-      debts.push({ from: debt.id, to: credit.id, amount: payment });
-    }
-
+    if (payment > 0.01) debts.push({ from: debt.id, to: credit.id, amount: payment });
     debt.amount -= payment;
     credit.amount -= payment;
-
     if (debt.amount < 0.01) i++;
     if (credit.amount < 0.01) j++;
   }
 
   return { balance, debts };
+}
+
+// ─── Small reusable bits ───────────────────────────────────────────────────
+
+/** Wraps any card/row so it gently lifts (scales) on press. */
+function Liftable({ onPress, onLongPress, style, children, disabled }: any) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const pressIn = () => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 40, bounciness: 4 }).start();
+  const pressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 6 }).start();
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      disabled={disabled}
+      onPressIn={onPress || onLongPress ? pressIn : undefined}
+      onPressOut={onPress || onLongPress ? pressOut : undefined}
+    >
+      <Animated.View style={[style, { transform: [{ scale }] }]}>
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+/** Horizontal category bar that animates its width in on mount / change. */
+function AnimatedBar({ percentage, color }: { percentage: number; color: string }) {
+  const widthAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(widthAnim, {
+      toValue: Math.max(2, percentage),
+      duration: 700,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [percentage]);
+  return (
+    <View style={styles.catBarBg}>
+      <Animated.View
+        style={[
+          styles.catBarFill,
+          {
+            backgroundColor: color,
+            width: widthAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }),
+          },
+        ]}
+      />
+    </View>
+  );
+}
+
+/** Fades a value in — used for the hero amount / stat numbers. */
+function FadeIn({ children, style, delay = 0 }: any) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(6)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 420, delay, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 420, delay, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+  }, []);
+  return (
+    <Animated.View style={[style, { opacity, transform: [{ translateY }] }]}>
+      {children}
+    </Animated.View>
+  );
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
@@ -134,12 +205,32 @@ export default function BudgetScreen() {
   const [destinations, setDestinations] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
+  const [upcomingItems, setUpcomingItems] = useState<any[]>([]);
   const [currentUserId, setCurrentUserId] = useState('');
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editExpense, setEditExpense] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState('Overview');
+  const [activeTab, setActiveTab] = useState<'Overview' | 'Timeline' | 'Settlement'>('Overview');
+  const [fabOpen, setFabOpen] = useState(false);
   const statusBarHeight = useStatusBarHeight();
+  const tabBarHeight = useBottomTabBarHeight();
+
+  const fabRotate = useRef(new Animated.Value(0)).current;
+  const sheetY = useRef(new Animated.Value(280)).current;
+
+  function openFab() {
+    setFabOpen(true);
+    Animated.parallel([
+      Animated.timing(fabRotate, { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.spring(sheetY, { toValue: 0, useNativeDriver: true, speed: 16, bounciness: 4 }),
+    ]).start();
+  }
+  function closeFab() {
+    Animated.parallel([
+      Animated.timing(fabRotate, { toValue: 0, duration: 180, useNativeDriver: true }),
+      Animated.timing(sheetY, { toValue: 280, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+    ]).start(() => setFabOpen(false));
+  }
 
   async function handleDeleteExpense(id: string) {
     Alert.alert('Delete expense', 'Remove this expense?', [
@@ -148,6 +239,15 @@ export default function BudgetScreen() {
         await supabase.from('expenses').delete().eq('id', id);
         setExpenses(prev => prev.filter(e => e.id !== id));
       }},
+    ]);
+  }
+
+  function openOverflowMenu() {
+    Alert.alert('Budget options', undefined, [
+      { text: 'Edit trip budget', onPress: () => {} },
+      { text: 'Change currency', onPress: () => {} },
+      { text: 'Export expenses', onPress: () => {} },
+      { text: 'Cancel', style: 'cancel' },
     ]);
   }
 
@@ -190,6 +290,24 @@ export default function BudgetScreen() {
       role: m.role,
     }));
     setMembers(mappedMembers);
+
+    // Best-effort: surface upcoming itinerary items with an estimated cost.
+    // Hidden gracefully if this table / shape doesn't exist for this trip.
+    try {
+      const todayStr = getTodayStr();
+      const { data: items, error } = await supabase
+        .from('itinerary_items')
+        .select('id, title, category, estimated_cost, date')
+        .eq('trip_id', tripData.id)
+        .gte('date', todayStr)
+        .order('date', { ascending: true })
+        .limit(3);
+      if (!error && items) setUpcomingItems(items.filter((it: any) => it.estimated_cost != null));
+      else setUpcomingItems([]);
+    } catch {
+      setUpcomingItems([]);
+    }
+
     setLoading(false);
   }, [currentTripId]);
 
@@ -202,13 +320,14 @@ export default function BudgetScreen() {
   // ─── Calculations ──────────────────────────────────────────────────────────
   const totalBudget = trip?.budget ?? 0;
   const currency = trip?.currency ?? 'EUR';
+  const sym = currency;
   const totalSpent = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
   const remaining = totalBudget - totalSpent;
   const percentUsed = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0;
+  const percentRemaining = Math.max(0, 100 - percentUsed);
 
   const today = getTodayStr();
   const yesterday = getYesterdayStr();
-
   const todaySpent = expenses.filter(e => e.date?.startsWith(today)).reduce((sum, e) => sum + Number(e.amount), 0);
   const yesterdaySpent = expenses.filter(e => e.date?.startsWith(yesterday)).reduce((sum, e) => sum + Number(e.amount), 0);
 
@@ -233,6 +352,20 @@ export default function BudgetScreen() {
   const dailyAverage = daysElapsed > 0 ? totalSpent / daysElapsed : 0;
   const targetPerDay = totalBudget > 0 ? totalBudget / totalDays : 0;
   const overUnder = dailyAverage - targetPerDay;
+  const avgAvailableToday = daysLeft > 0 ? remaining / daysLeft : Math.max(0, remaining);
+  const remainingToday = avgAvailableToday - todaySpent;
+
+  // Pace comparison drives the status badge + smart insight
+  const paceRatio = totalDays > 0 ? Math.min(1, daysElapsed / totalDays) : 0;
+  const spendRatio = totalBudget > 0 ? totalSpent / totalBudget : 0;
+  const paceDiff = spendRatio - paceRatio;
+
+  type Status = { label: string; emoji: string; color: string; bg: string };
+  const status: Status = (() => {
+    if (remaining < 0 || paceDiff > 0.15) return { label: 'Budget Alert', emoji: '🔴', color: COLORS.red, bg: COLORS.redSoft };
+    if (paceDiff > 0.05) return { label: 'Watch Spending', emoji: '🟡', color: COLORS.amber, bg: COLORS.amberSoft };
+    return { label: 'On Track', emoji: '🟢', color: COLORS.green, bg: COLORS.greenSoft };
+  })();
 
   const categoryTotals: Record<string, number> = {};
   for (const expense of expenses) {
@@ -243,6 +376,22 @@ export default function BudgetScreen() {
     .map(([name, spent]) => ({ name, spent, percentage: totalSpent > 0 ? Math.round((spent / totalSpent) * 100) : 0 }))
     .sort((a, b) => b.spent - a.spent);
 
+  const smartInsight: string = (() => {
+    if (remaining < 0) return `You're ${sym} ${Math.abs(remaining).toFixed(0)} over budget. Might be worth easing off for the rest of the trip.`;
+    if (paceDiff > 0.15) return `You're spending faster than planned — about ${sym} ${Math.abs(overUnder).toFixed(0)}/day over your target.`;
+    if (paceDiff < -0.05) {
+      const projected = dailyAverage * totalDays;
+      const savings = totalBudget - projected;
+      if (savings > 1) return `You're spending less than expected. At this pace you'll finish around ${sym} ${savings.toFixed(0)} under budget.`;
+    }
+    if (categories.length > 0) {
+      const top = categories[0];
+      const meta = CATEGORY_META[top.name] ?? CATEGORY_META.other;
+      return `${meta.label} is your biggest expense so far, at ${top.percentage}% of spending.`;
+    }
+    return `You can comfortably afford tomorrow's plans.`;
+  })();
+
   const expensesByDate: Record<string, any[]> = {};
   for (const expense of expenses) {
     const dateKey = expense.date?.split('T')[0] ?? 'unknown';
@@ -250,12 +399,21 @@ export default function BudgetScreen() {
     expensesByDate[dateKey].push(expense);
   }
   const sortedDates = Object.keys(expensesByDate).sort((a, b) => b.localeCompare(a));
+  const recentExpenses = expenses.slice(0, 5);
 
   const { balance, debts } = calculateSettlement(expenses, members, currency);
 
+  function getMember(id: string) {
+    return members.find(m => m.id === id);
+  }
   function getMemberName(id: string): string {
-    const m = members.find(m => m.id === id);
+    const m = getMember(id);
     return m?.name ?? m?.email ?? 'Unknown';
+  }
+  function initials(name?: string | null): string {
+    if (!name) return '•';
+    const parts = name.trim().split(/\s+/);
+    return (parts[0]?.[0] ?? '').concat(parts[1]?.[0] ?? '').toUpperCase() || name[0]?.toUpperCase() || '•';
   }
 
   function formatDateLabel(dateStr: string): string {
@@ -266,10 +424,17 @@ export default function BudgetScreen() {
       return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
     } catch { return dateStr; }
   }
+  function formatUpcomingLabel(dateStr: string): string {
+    if (dateStr === today) return 'Today';
+    const tomorrow = localDateStr(new Date(new Date(today).getTime() + 86400000));
+    if (dateStr?.startsWith(tomorrow)) return 'Tomorrow';
+    try {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    } catch { return dateStr; }
+  }
 
-  const sym = currency;
-
-  // ─── Destination context for Add Expense card (derived, not new schema) ────
+  // ─── Destination context (also feeds the hero illustration) ────────────────
   const destinationContext = (() => {
     if (!trip || destinations.length === 0) return null;
 
@@ -303,15 +468,17 @@ export default function BudgetScreen() {
       totalDays: dayCounter,
       dateLabel: todayLocal.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }),
       isCurrent,
-      heroEmoji: '🛕',
+      heroEmoji: heroTheme?.emoji ?? '🗺️',
     };
   })();
+
+  const spin = fabRotate.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] });
 
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={[]}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color="#4CAF50" />
+          <ActivityIndicator size="large" color={COLORS.green} />
         </View>
       </SafeAreaView>
     );
@@ -325,158 +492,158 @@ export default function BudgetScreen() {
         </View>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
           <Text style={{ fontSize: 48, marginBottom: 16 }}>💰</Text>
-          <Text style={{ fontSize: 20, fontWeight: '800', color: '#1A1A1A', marginBottom: 8 }}>No active trip</Text>
-          <Text style={{ fontSize: 14, color: '#888', textAlign: 'center' }}>Create a trip to start tracking expenses</Text>
+          <Text style={{ fontSize: 20, fontWeight: '800', color: COLORS.ink, marginBottom: 8 }}>No active trip</Text>
+          <Text style={{ fontSize: 14, color: COLORS.inkSoft, textAlign: 'center' }}>Create a trip to start tracking expenses</Text>
         </View>
       </SafeAreaView>
     );
   }
 
+  const destName = destinationContext?.name ?? trip.name;
+
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
-      {/* Header */}
+      {/* ─── Header ─── */}
       <View style={[styles.header, { paddingTop: statusBarHeight }]}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Budget</Text>
-          <Text style={styles.headerTrip} numberOfLines={1}>{trip.name}</Text>
-        </View>
-        <TouchableOpacity style={styles.addHeaderBtn} onPress={() => setShowAddModal(true)}>
-          <Text style={styles.addHeaderBtnText}>＋ Add</Text>
-        </TouchableOpacity>
+        {activeTab === 'Overview' ? (
+          <>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.headerTitle}>Budget</Text>
+              <Text style={styles.headerSubtitle} numberOfLines={1}>{destName}</Text>
+            </View>
+            <TouchableOpacity style={styles.headerAddBtn} onPress={() => setShowAddModal(true)} activeOpacity={0.85}>
+              <Text style={styles.headerAddBtnText}>＋ Expense</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerIconBtn} onPress={openOverflowMenu} activeOpacity={0.7}>
+              <Text style={styles.headerIconBtnText}>⋯</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <TouchableOpacity style={styles.backBtn} onPress={() => setActiveTab('Overview')} activeOpacity={0.7}>
+              <Text style={styles.backBtnText}>‹</Text>
+            </TouchableOpacity>
+            <Text style={[styles.headerTitle, { flex: 1, fontSize: 18 }]}>
+              {activeTab === 'Timeline' ? 'Budget Timeline' : 'Settlement'}
+            </Text>
+            <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7}>
+              <Text style={styles.headerIconBtnText}>{activeTab === 'Timeline' ? '⚲' : '＋'}</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabRow}>
-        {TABS.map(tab => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.tab, activeTab === tab && styles.tabActive]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: tabBarHeight + 100 }}>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-
-        {/* ─── OVERVIEW TAB ─── */}
+        {/* ─── OVERVIEW ─── */}
         {activeTab === 'Overview' && (
           <>
-            {/* Hero Card */}
+            {/* Hero */}
             <View style={styles.heroCard}>
-              <View style={styles.heroTop}>
-                <View>
-                  <Text style={styles.heroLabel}>Total budget</Text>
-                  <Text style={styles.heroAmount}>{sym} {totalBudget.toLocaleString()}</Text>
-                </View>
-                <View style={styles.heroDaysWrap}>
-                  <Text style={styles.heroDaysNum}>{daysLeft}</Text>
-                  <Text style={styles.heroDaysLabel}>days left</Text>
+              {/* decorative illustration layer */}
+              <View style={styles.heroIllustration} pointerEvents="none">
+                <View style={[styles.heroBlob, { width: 220, height: 220, borderRadius: 110, backgroundColor: 'rgba(31,109,76,0.14)', top: -60, right: -50 }]} />
+                <View style={[styles.heroBlob, { width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(201,162,75,0.16)', bottom: -40, left: -30 }]} />
+                <View style={[styles.heroBlob, { width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(31,109,76,0.10)', top: 30, left: 20 }]} />
+                <Text style={styles.heroEmojiWatermark}>{destinationContext?.heroEmoji ?? '🗺️'}</Text>
+                <Sparkle style={{ position: 'absolute', top: 18, right: 60 }} />
+                <Dot style={{ position: 'absolute', bottom: 60, right: 24 }} />
+              </View>
+
+              <View style={styles.heroTopRow}>
+                <View style={styles.heroProgressPill}>
+                  <Text style={styles.heroProgressLabel}>Trip progress</Text>
+                  <Text style={styles.heroProgressValue}>{daysElapsed} / {totalDays} days</Text>
+                  <View style={styles.heroProgressBarBg}>
+                    <View style={[styles.heroProgressBarFill, { width: `${Math.min(100, (daysElapsed / Math.max(1, totalDays)) * 100)}%` }]} />
+                  </View>
                 </View>
               </View>
-              <View style={styles.progressBarWrap}>
-                <View style={styles.progressBarBg}>
-                  <View style={[
-                    styles.progressBarFill,
-                    { width: `${Math.min(percentUsed, 100)}%` },
-                    percentUsed > 90 && { backgroundColor: '#F44336' },
-                    percentUsed > 70 && percentUsed <= 90 && { backgroundColor: '#FF9800' },
-                  ]} />
+
+              <View style={styles.heroCenter}>
+                <View style={styles.ringBackdrop}>
+                  <BudgetDonut percentage={percentRemaining} size={148} strokeWidth={12} />
+                  <View style={styles.ringTextWrap} pointerEvents="none">
+                    <FadeIn>
+                      <Text style={styles.ringAmount}>{sym} {Math.abs(remaining).toFixed(0)}</Text>
+                    </FadeIn>
+                    <Text style={styles.ringSub}>{remaining < 0 ? 'Over budget' : 'Remaining'}</Text>
+                    <Text style={styles.ringPercent}>{percentRemaining}%</Text>
+                  </View>
                 </View>
-                <Text style={styles.progressPercent}>{percentUsed}%</Text>
               </View>
-              <View style={styles.heroStats}>
-                <View style={styles.heroStat}>
-                  <Text style={styles.heroStatValue}>{sym} {totalSpent.toFixed(0)}</Text>
-                  <Text style={styles.heroStatLabel}>Spent</Text>
+
+              <View style={styles.heroBottomRow}>
+                <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
+                  <Text style={{ fontSize: 12 }}>{status.emoji}</Text>
+                  <Text style={[styles.statusBadgeText, { color: status.color }]}>{status.label}</Text>
                 </View>
-                <View style={styles.heroStatDivider} />
-                <View style={styles.heroStat}>
-                  <Text style={[styles.heroStatValue, { color: remaining < 0 ? '#F44336' : '#4CAF50' }]}>
-                    {sym} {Math.abs(remaining).toFixed(0)}
+                <View style={styles.avgAvailableRow}>
+                  <Text style={styles.avgAvailableText}>
+                    Average available <Text style={styles.avgAvailableAmount}>{sym} {Math.max(0, avgAvailableToday).toFixed(0)}/day</Text>
                   </Text>
-                  <Text style={styles.heroStatLabel}>{remaining < 0 ? 'Over budget' : 'Remaining'}</Text>
-                </View>
-                <View style={styles.heroStatDivider} />
-                <View style={styles.heroStat}>
-                  <Text style={styles.heroStatValue}>Day {daysElapsed}/{totalDays}</Text>
-                  <Text style={styles.heroStatLabel}>Progress</Text>
                 </View>
               </View>
             </View>
 
-            {/* Spending Insights */}
+            {/* Smart Insight */}
             <View style={styles.sectionWrap}>
-              <Text style={styles.sectionTitle}>💡 SPENDING INSIGHTS</Text>
-              <View style={styles.insightsGrid}>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightEmoji}>📅</Text>
-                  <Text style={styles.insightValue}>{sym} {todaySpent.toFixed(0)}</Text>
-                  <Text style={styles.insightLabel}>Today</Text>
-                </View>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightEmoji}>⏮</Text>
-                  <Text style={styles.insightValue}>{sym} {yesterdaySpent.toFixed(0)}</Text>
-                  <Text style={styles.insightLabel}>Yesterday</Text>
-                </View>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightEmoji}>📊</Text>
-                  <Text style={styles.insightValue}>{sym} {dailyAverage.toFixed(0)}</Text>
-                  <Text style={styles.insightLabel}>Daily avg</Text>
-                </View>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightEmoji}>🎯</Text>
-                  <Text style={styles.insightValue}>{sym} {targetPerDay.toFixed(0)}</Text>
-                  <Text style={styles.insightLabel}>Target/day</Text>
-                </View>
+              <View style={styles.insightCard}>
+                <Text style={styles.insightSparkle}>✨</Text>
+                <Text style={styles.insightText}>{smartInsight}</Text>
               </View>
-              {targetPerDay > 0 && (
-                <View style={[styles.insightAlert, { backgroundColor: overUnder > 0 ? '#FFF3E0' : '#E8F5E9' }]}>
-                  <Text style={[styles.insightAlertText, { color: overUnder > 0 ? '#E65100' : '#2E7D32' }]}>
-                    {overUnder > 0
-                      ? `⚠️ ${sym} ${Math.abs(overUnder).toFixed(0)}/day over plan`
-                      : `✅ ${sym} ${Math.abs(overUnder).toFixed(0)}/day under budget`}
-                  </Text>
-                </View>
-              )}
             </View>
 
-            {/* Categories */}
+            {/* Today Snapshot */}
+            <View style={styles.sectionWrap}>
+              <View style={styles.snapshotRow}>
+                <View style={styles.snapshotCard}>
+                  <View style={[styles.snapshotIconWrap, { backgroundColor: COLORS.greenSoft }]}>
+                    <Text style={{ fontSize: 16 }}>📅</Text>
+                  </View>
+                  <Text style={styles.snapshotLabel}>Spent Today</Text>
+                  <Text style={styles.snapshotAmount}>{sym} {todaySpent.toFixed(0)}</Text>
+                  {yesterdaySpent > 0 && (
+                    <Text style={[styles.snapshotDelta, { color: todaySpent > yesterdaySpent ? COLORS.amber : COLORS.green }]}>
+                      {todaySpent > yesterdaySpent ? '↗' : '↘'} vs yesterday
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.snapshotCard}>
+                  <View style={[styles.snapshotIconWrap, { backgroundColor: COLORS.creamDark }]}>
+                    <Text style={{ fontSize: 16 }}>👛</Text>
+                  </View>
+                  <Text style={styles.snapshotLabel}>Remaining Today</Text>
+                  <Text style={styles.snapshotAmount}>{sym} {Math.max(0, remainingToday).toFixed(0)}</Text>
+                  <Text style={[styles.snapshotDelta, { color: remainingToday >= 0 ? COLORS.green : COLORS.red }]}>
+                    {remainingToday >= 0 ? '● Still safe' : '● Over today\'s pace'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Category Breakdown */}
             {categories.length > 0 && (
               <View style={styles.sectionWrap}>
-                <Text style={styles.sectionTitle}>📂 BY CATEGORY</Text>
-                <View style={styles.categoriesCard}>
-                  <View style={styles.donutRow}>
-                    <BudgetDonut percentage={percentUsed} size={100} strokeWidth={12} />
-                    <View style={styles.categoryLegend}>
-                      {categories.slice(0, 4).map(cat => {
-                        const meta = CATEGORY_META[cat.name] ?? CATEGORY_META.other;
-                        return (
-                          <View key={cat.name} style={styles.legendRow}>
-                            <View style={[styles.legendDot, { backgroundColor: meta.color }]} />
-                            <Text style={styles.legendLabel}>{meta.label}</Text>
-                            <Text style={styles.legendValue}>{cat.percentage}%</Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </View>
-                  <View style={styles.catDivider} />
-                  {categories.map(cat => {
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>CATEGORY BREAKDOWN</Text>
+                  <Text style={styles.sectionLink}>View full report</Text>
+                </View>
+                <View style={styles.card}>
+                  {categories.map((cat, idx) => {
                     const meta = CATEGORY_META[cat.name] ?? CATEGORY_META.other;
                     return (
-                      <View key={cat.name} style={[styles.catRow, { backgroundColor: meta.bg }]}>
-                        <Text style={{ fontSize: 22 }}>{meta.emoji}</Text>
-                        <View style={styles.catContent}>
-                          <View style={styles.catHeader}>
-                            <Text style={styles.catName}>{meta.label}</Text>
-                            <Text style={styles.catAmount}>{sym} {cat.spent.toFixed(0)}</Text>
-                            <Text style={[styles.catPercent, { color: meta.color }]}>{cat.percentage}%</Text>
-                          </View>
-                          <View style={styles.catBarBg}>
-                            <View style={[styles.catBarFill, { width: `${cat.percentage}%`, backgroundColor: meta.color }]} />
-                          </View>
+                      <View key={cat.name} style={[styles.catRow, idx < categories.length - 1 && styles.catRowBorder]}>
+                        <View style={[styles.catIconWrap, { backgroundColor: meta.bg }]}>
+                          <Text style={{ fontSize: 16 }}>{meta.emoji}</Text>
+                        </View>
+                        <View style={styles.catMiddle}>
+                          <Text style={styles.catName}>{meta.label}</Text>
+                          <AnimatedBar percentage={cat.percentage} color={meta.color} />
+                        </View>
+                        <View style={styles.catRight}>
+                          <Text style={[styles.catPercent, { color: meta.color }]}>{cat.percentage}%</Text>
+                          <Text style={styles.catAmount}>{sym} {cat.spent.toFixed(0)}</Text>
                         </View>
                       </View>
                     );
@@ -485,54 +652,149 @@ export default function BudgetScreen() {
               </View>
             )}
 
-            {/* Add button */}
-            <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddModal(true)}>
-              <Text style={styles.addBtnIcon}>＋</Text>
-              <Text style={styles.addBtnText}>Add expense</Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        {/* ─── TIMELINE TAB ─── */}
-        {activeTab === 'Timeline' && (
-          <View style={styles.sectionWrap}>
-            {sortedDates.length === 0 ? (
-              <View style={{ alignItems: 'center', paddingVertical: 60 }}>
-                <Text style={{ fontSize: 40, marginBottom: 12 }}>💸</Text>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A' }}>No expenses yet</Text>
-                <Text style={{ fontSize: 13, color: '#888', marginTop: 4 }}>Add your first expense</Text>
+            {/* Upcoming Expenses */}
+            {upcomingItems.length > 0 && (
+              <View style={styles.sectionWrap}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>UPCOMING EXPENSES</Text>
+                  <Text style={styles.sectionLink}>View itinerary</Text>
+                </View>
+                <View style={styles.card}>
+                  {upcomingItems.map((item, idx) => {
+                    const meta = CATEGORY_META[item.category] ?? CATEGORY_META.other;
+                    return (
+                      <Liftable
+                        key={item.id}
+                        style={[styles.upcomingRow, idx < upcomingItems.length - 1 && styles.catRowBorder]}
+                      >
+                        <View style={[styles.catIconWrap, { backgroundColor: meta.bg }]}>
+                          <Text style={{ fontSize: 16 }}>{meta.emoji}</Text>
+                        </View>
+                        <View style={styles.catMiddle}>
+                          <Text style={styles.upcomingWhen}>{formatUpcomingLabel(item.date)}</Text>
+                          <Text style={styles.catName}>{item.title}</Text>
+                          <Text style={styles.upcomingEstimate}>Estimated</Text>
+                        </View>
+                        <Text style={styles.catAmount}>{sym} {Number(item.estimated_cost).toFixed(0)}</Text>
+                      </Liftable>
+                    );
+                  })}
+                </View>
               </View>
-            ) : (
-              <View style={styles.timelineCard}>
-                {sortedDates.map((dateKey, di) => {
-                  const dayExpenses = expensesByDate[dateKey];
-                  const dayTotal = dayExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
-                  return (
-                    <View key={dateKey}>
-                      {di > 0 && <View style={styles.timelineDivider} />}
-                      <View style={styles.timelineDateRow}>
-                        <Text style={styles.timelineDateLabel}>{formatDateLabel(dateKey)}</Text>
-                        <Text style={styles.timelineDateTotal}>{sym} {dayTotal.toFixed(0)}</Text>
-                      </View>
-                      {dayExpenses.map(expense => {
-                        const meta = CATEGORY_META[expense.category] ?? CATEGORY_META.other;
-                        const paidByName = getMemberName(expense.paid_by);
-                        const splitCount = expense.split_with?.length ?? 0;
-                        return (
-                          <TouchableOpacity key={expense.id} style={styles.timelineItem} onLongPress={() => {
+            )}
+
+            {/* Recent Expenses */}
+            <View style={styles.sectionWrap}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>RECENT EXPENSES</Text>
+                <TouchableOpacity onPress={() => setActiveTab('Timeline')}>
+                  <Text style={styles.sectionLink}>View all</Text>
+                </TouchableOpacity>
+              </View>
+              {recentExpenses.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <Text style={{ fontSize: 32, marginBottom: 8 }}>💸</Text>
+                  <Text style={styles.emptyTitle}>No expenses yet</Text>
+                  <Text style={styles.emptySub}>Tap the + button to log your first expense</Text>
+                </View>
+              ) : (
+                <View style={styles.card}>
+                  {recentExpenses.map((expense, idx) => {
+                    const meta = CATEGORY_META[expense.category] ?? CATEGORY_META.other;
+                    const dateKey = expense.date?.split('T')[0];
+                    const splitCount = expense.split_with?.length ?? 0;
+                    const isShared = splitCount > 0;
+                    const paidByOther = isShared && expense.paid_by && expense.paid_by !== currentUserId;
+                    const yourShare = isShared ? Number(expense.amount) / (splitCount + 1) : Number(expense.amount);
+                    return (
+                      <Liftable
+                        key={expense.id}
+                        style={[styles.recentRow, idx < recentExpenses.length - 1 && styles.catRowBorder]}
+                        onLongPress={() => {
                           Alert.alert(expense.title, 'What would you like to do?', [
                             { text: 'Edit', onPress: () => setEditExpense(expense) },
                             { text: 'Delete', style: 'destructive', onPress: () => handleDeleteExpense(expense.id) },
                             { text: 'Cancel', style: 'cancel' },
                           ]);
-                        }}>
-                            <View style={[styles.timelineIcon, { backgroundColor: meta.bg }]}>
-                              <Text style={{ fontSize: 16 }}>{meta.emoji}</Text>
+                        }}
+                      >
+                        <View style={[styles.catIconWrap, { backgroundColor: meta.bg }]}>
+                          <Text style={{ fontSize: 16 }}>{meta.emoji}</Text>
+                        </View>
+                        <View style={styles.catMiddle}>
+                          <View style={styles.recentTitleRow}>
+                            <Text style={styles.catName}>{expense.title}</Text>
+                            {isShared && (
+                              <View style={styles.sharedPill}>
+                                <Text style={styles.sharedPillText}>👥 Split {splitCount + 1}</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={styles.recentSub}>
+                            {formatDateLabel(dateKey)}{formatTime(expense.date) ? ` · ${formatTime(expense.date)}` : ''}
+                            {members.length > 1 && expense.paid_by ? ` · Paid by ${paidByOther ? getMemberName(expense.paid_by) : 'you'}` : ''}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={styles.catAmount}>{sym} {Number(expense.amount).toFixed(0)}</Text>
+                          {isShared && <Text style={styles.yourShareText}>your share {sym} {yourShare.toFixed(0)}</Text>}
+                        </View>
+                      </Liftable>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          </>
+        )}
+
+        {/* ─── TIMELINE ─── */}
+        {activeTab === 'Timeline' && (
+          <View style={styles.sectionWrap}>
+            {sortedDates.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={{ fontSize: 40, marginBottom: 12 }}>💸</Text>
+                <Text style={styles.emptyTitle}>No expenses yet</Text>
+                <Text style={styles.emptySub}>Add your first expense</Text>
+              </View>
+            ) : (
+              sortedDates.map((dateKey) => {
+                const dayExpenses = expensesByDate[dateKey];
+                const dayTotal = dayExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+                return (
+                  <View key={dateKey} style={{ marginBottom: 18 }}>
+                    <View style={styles.timelineDateRow}>
+                      <Text style={styles.timelineDateLabel}>{formatDateLabel(dateKey)}</Text>
+                      <Text style={styles.timelineDateSub}>{formatUpcomingLabel(dateKey) === dateKey ? '' : ''}</Text>
+                    </View>
+                    <View style={styles.card}>
+                      {dayExpenses.map((expense, idx) => {
+                        const meta = CATEGORY_META[expense.category] ?? CATEGORY_META.other;
+                        const paidByName = getMemberName(expense.paid_by);
+                        const splitCount = expense.split_with?.length ?? 0;
+                        return (
+                          <Liftable
+                            key={expense.id}
+                            style={[styles.timelineItem, idx < dayExpenses.length - 1 && styles.catRowBorder]}
+                            onLongPress={() => {
+                              Alert.alert(expense.title, 'What would you like to do?', [
+                                { text: 'Edit', onPress: () => setEditExpense(expense) },
+                                { text: 'Delete', style: 'destructive', onPress: () => handleDeleteExpense(expense.id) },
+                                { text: 'Cancel', style: 'cancel' },
+                              ]);
+                            }}
+                          >
+                            <View style={styles.timelineTrack}>
+                              <View style={[styles.timelineDot, { backgroundColor: meta.color }]} />
+                              {idx < dayExpenses.length - 1 && <View style={styles.timelineLine} />}
                             </View>
-                            <View style={styles.timelineInfo}>
-                              <Text style={styles.timelineTitle}>{expense.title}</Text>
-                              <Text style={styles.timelineCategory}>
-                                {meta.label}
+                            <View style={[styles.catIconWrap, { backgroundColor: meta.bg }]}>
+                              <Text style={{ fontSize: 15 }}>{meta.emoji}</Text>
+                            </View>
+                            <View style={styles.catMiddle}>
+                              <Text style={styles.catName}>{expense.title}</Text>
+                              <Text style={styles.recentSub}>
+                                {formatTime(expense.date)} · {meta.label}
                                 {expense.local_currency ? ` · ${expense.local_amount} ${expense.local_currency}` : ''}
                                 {splitCount > 0 ? ` · Split ${splitCount + 1} ways` : ''}
                               </Text>
@@ -540,61 +802,58 @@ export default function BudgetScreen() {
                                 <Text style={styles.timelinePaidBy}>👤 {paidByName}</Text>
                               )}
                             </View>
-                           <Text style={styles.timelineAmount}>{sym} {Number(expense.amount).toFixed(0)}</Text>
-                        </TouchableOpacity>
+                            <Text style={styles.catAmount}>{sym} {Number(expense.amount).toFixed(2)}</Text>
+                          </Liftable>
                         );
                       })}
                     </View>
-                  );
-                })}
-              </View>
+                    <Text style={styles.timelineDayTotal}>Day total · {sym} {dayTotal.toFixed(0)}</Text>
+                  </View>
+                );
+              })
             )}
-
-            <TouchableOpacity style={[styles.addBtn, { marginTop: 8 }]} onPress={() => setShowAddModal(true)}>
-              <Text style={styles.addBtnIcon}>＋</Text>
-              <Text style={styles.addBtnText}>Add expense</Text>
-            </TouchableOpacity>
           </View>
         )}
 
-        {/* ─── SETTLEMENT TAB ─── */}
+        {/* ─── SETTLEMENT ─── */}
         {activeTab === 'Settlement' && (
           <View style={styles.sectionWrap}>
             {members.length < 2 ? (
-              <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+              <View style={styles.emptyCard}>
                 <Text style={{ fontSize: 40, marginBottom: 12 }}>👥</Text>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A' }}>Add travel companions</Text>
-                <Text style={{ fontSize: 13, color: '#888', marginTop: 4, textAlign: 'center' }}>Invite members to your trip to track shared expenses</Text>
+                <Text style={styles.emptyTitle}>Add travel companions</Text>
+                <Text style={styles.emptySub}>Invite members to your trip to track shared expenses</Text>
               </View>
             ) : (
               <>
-                {/* Balances */}
-                <Text style={styles.sectionTitle}>💰 BALANCES</Text>
-                <View style={styles.balanceCard}>
-                  {members.map(m => {
+                <Text style={styles.sectionTitle}>TRAVEL COMPANIONS</Text>
+                <View style={styles.card}>
+                  {members.map((m, idx) => {
                     const bal = balance[m.id] ?? 0;
-                    const isPositive = bal > 0.01;
-                    const isNegative = bal < -0.01;
+                    const isYou = m.id === currentUserId;
+                    const paidTotal = expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + Number(e.amount), 0);
                     return (
-                      <View key={m.id} style={styles.balanceRow}>
-                        <View style={styles.balanceAvatar}>
-                          <Text style={{ fontSize: 18 }}>👤</Text>
+                      <View key={m.id} style={[styles.companionRow, idx < members.length - 1 && styles.catRowBorder]}>
+                        <View style={styles.avatarCircle}>
+                          <Text style={styles.avatarInitials}>{initials(m.name ?? m.email)}</Text>
                         </View>
-                        <Text style={styles.balanceName}>{m.name ?? m.email ?? 'Unknown'}</Text>
+                        <View style={styles.catMiddle}>
+                          <Text style={styles.catName}>{m.name ?? m.email ?? 'Unknown'}{isYou ? ' (You)' : ''}</Text>
+                          <Text style={styles.recentSub}>Paid</Text>
+                        </View>
                         <Text style={[
-                          styles.balanceAmount,
-                          isPositive && { color: '#4CAF50' },
-                          isNegative && { color: '#F44336' },
+                          styles.companionAmount,
+                          bal > 0.01 && { color: COLORS.green },
+                          bal < -0.01 && { color: COLORS.red },
                         ]}>
-                          {isPositive ? '+' : ''}{sym} {bal.toFixed(0)}
+                          {sym} {paidTotal.toFixed(2)}
                         </Text>
                       </View>
                     );
                   })}
                 </View>
 
-                {/* Settlement */}
-                <Text style={[styles.sectionTitle, { marginTop: 16 }]}>🤝 WHO PAYS WHOM</Text>
+                <Text style={[styles.sectionTitle, { marginTop: 18 }]}>SETTLEMENT SUMMARY</Text>
                 {debts.length === 0 ? (
                   <View style={styles.settledCard}>
                     <Text style={{ fontSize: 32, marginBottom: 8 }}>✅</Text>
@@ -602,33 +861,78 @@ export default function BudgetScreen() {
                     <Text style={styles.settledSub}>No payments needed</Text>
                   </View>
                 ) : (
-                  <View style={styles.debtsCard}>
+                  <View style={styles.settlementSummaryCard}>
+                    <Text style={styles.settlementEmoji}>💵</Text>
                     {debts.map((debt, i) => (
-                      <View key={i} style={[styles.debtRow, i < debts.length - 1 && styles.debtRowBorder]}>
-                        <View style={styles.debtAvatars}>
-                          <Text style={{ fontSize: 20 }}>👤</Text>
-                          <Text style={styles.debtArrow}>→</Text>
-                          <Text style={{ fontSize: 20 }}>👤</Text>
-                        </View>
-                        <View style={styles.debtInfo}>
-                          <Text style={styles.debtText}>
-                            <Text style={styles.debtName}>{getMemberName(debt.from)}</Text>
-                            {' owes '}
-                            <Text style={styles.debtName}>{getMemberName(debt.to)}</Text>
-                          </Text>
-                        </View>
-                        <Text style={styles.debtAmount}>{sym} {debt.amount.toFixed(0)}</Text>
+                      <View key={i} style={{ alignItems: 'center', marginBottom: i < debts.length - 1 ? 14 : 0 }}>
+                        <Text style={styles.settlementLine}>
+                          <Text style={styles.settlementName}>{getMemberName(debt.from)}</Text>
+                          {debt.to === currentUserId ? ' owes you' : (
+                            <> owes <Text style={styles.settlementName}>{getMemberName(debt.to)}</Text></>
+                          )}
+                        </Text>
+                        <Text style={styles.settlementAmount}>{sym} {debt.amount.toFixed(2)}</Text>
                       </View>
                     ))}
+                    <TouchableOpacity style={styles.requestBtn} activeOpacity={0.88}>
+                      <Text style={styles.requestBtnText}>↗ Request Payment</Text>
+                    </TouchableOpacity>
                   </View>
                 )}
+
+                <View style={styles.howItWorksCard}>
+                  <Text style={{ fontSize: 18 }}>💡</Text>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.howItWorksTitle}>How it works</Text>
+                    <Text style={styles.howItWorksSub}>We calculate shared expenses fairly so everyone pays their part.</Text>
+                  </View>
+                </View>
               </>
             )}
           </View>
         )}
 
-        <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* ─── Floating Action Button ─── */}
+      {activeTab === 'Overview' && (
+        <TouchableOpacity
+          style={[styles.fab, { bottom: tabBarHeight + 16 }]}
+          activeOpacity={0.9}
+          onPress={openFab}
+        >
+          <Animated.Text style={[styles.fabIcon, { transform: [{ rotate: spin }] }]}>＋</Animated.Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ─── FAB Menu Sheet ─── */}
+      <Modal visible={fabOpen} transparent animationType="fade" onRequestClose={closeFab}>
+        <Pressable style={styles.sheetBackdrop} onPress={closeFab}>
+          <Animated.View style={[styles.sheet, { transform: [{ translateY: sheetY }] }]}>
+            <View style={styles.sheetHandle} />
+            {FAB_MENU.map((item, idx) => (
+              <TouchableOpacity
+                key={item.key}
+                style={[styles.sheetRow, idx < FAB_MENU.length - 1 && styles.catRowBorder]}
+                disabled={!item.enabled}
+                activeOpacity={0.7}
+                onPress={() => {
+                  closeFab();
+                  if (item.key === 'add') setShowAddModal(true);
+                }}
+              >
+                <Text style={{ fontSize: 18, opacity: item.enabled ? 1 : 0.4 }}>{item.emoji}</Text>
+                <Text style={[styles.sheetRowText, !item.enabled && { color: COLORS.inkFaint }]}>{item.label}</Text>
+                {!item.enabled && <Text style={styles.comingSoonTag}>Coming soon</Text>}
+                {item.enabled && <Text style={styles.sheetChevron}>›</Text>}
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.sheetCancel} onPress={closeFab} activeOpacity={0.7}>
+              <Text style={styles.sheetCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </Pressable>
+      </Modal>
 
       <AddExpenseModal
         visible={showAddModal || !!editExpense}
@@ -646,89 +950,156 @@ export default function BudgetScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F0F0F0' },
+  safe: { flex: 1, backgroundColor: COLORS.bg },
   scroll: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: '#1A1A1A' },
-  headerTrip: { fontSize: 13, fontWeight: '600', color: '#4CAF50', marginTop: 1 },
-  addHeaderBtn: { backgroundColor: '#4CAF50', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
-  addHeaderBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  tabRow: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', paddingHorizontal: 16, gap: 8, paddingVertical: 8 },
-  tab: { paddingHorizontal: 18, paddingVertical: 7, borderRadius: 20, backgroundColor: '#F0F0F0' },
-  tabActive: { backgroundColor: '#4CAF50' },
-  tabText: { fontSize: 14, fontWeight: '600', color: '#666' },
-  tabTextActive: { color: '#fff' },
-  heroCard: { margin: 16, marginBottom: 8, backgroundColor: '#1A1A2E', borderRadius: 20, padding: 20 },
-  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  heroLabel: { fontSize: 13, color: 'rgba(255,255,255,0.6)', marginBottom: 4 },
-  heroAmount: { fontSize: 36, fontWeight: '900', color: '#fff' },
-  heroDaysWrap: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
-  heroDaysNum: { fontSize: 24, fontWeight: '900', color: '#fff' },
-  heroDaysLabel: { fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 2 },
-  progressBarWrap: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
-  progressBarBg: { flex: 1, height: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 4, overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: '#4CAF50', borderRadius: 4 },
-  progressPercent: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.8)', width: 36, textAlign: 'right' },
-  heroStats: { flexDirection: 'row', alignItems: 'center' },
-  heroStat: { flex: 1, alignItems: 'center' },
-  heroStatValue: { fontSize: 16, fontWeight: '800', color: '#fff', marginBottom: 2 },
-  heroStatLabel: { fontSize: 11, color: 'rgba(255,255,255,0.5)' },
-  heroStatDivider: { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.15)' },
-  sectionWrap: { marginHorizontal: 16, marginBottom: 8 },
-  sectionTitle: { fontSize: 11, fontWeight: '700', color: '#888', letterSpacing: 0.8, marginBottom: 10 },
-  insightsGrid: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  insightCard: { flex: 1, backgroundColor: '#fff', borderRadius: 14, padding: 12, alignItems: 'center', gap: 4, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
-  insightEmoji: { fontSize: 20 },
-  insightValue: { fontSize: 15, fontWeight: '800', color: '#1A1A1A' },
-  insightLabel: { fontSize: 10, color: '#888', fontWeight: '600' },
-  insightAlert: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
-  insightAlertText: { fontSize: 13, fontWeight: '600' },
-  categoriesCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
-  donutRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 16 },
-  categoryLegend: { flex: 1, gap: 8 },
-  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendLabel: { flex: 1, fontSize: 12, color: '#555', fontWeight: '500' },
-  legendValue: { fontSize: 12, color: '#888', fontWeight: '600' },
-  catDivider: { height: 1, backgroundColor: '#F5F5F5', marginBottom: 12 },
-  catRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 8 },
-  catContent: { flex: 1 },
-  catHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  catName: { flex: 1, fontSize: 13, fontWeight: '600', color: '#1A1A1A' },
-  catAmount: { fontSize: 13, fontWeight: '700', color: '#1A1A1A', marginRight: 6 },
-  catPercent: { fontSize: 11, fontWeight: '700', width: 32, textAlign: 'right' },
-  catBarBg: { height: 4, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 2, overflow: 'hidden' },
-  catBarFill: { height: '100%', borderRadius: 2 },
-  timelineCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
-  timelineDivider: { height: 1, backgroundColor: '#F5F5F5', marginVertical: 12 },
-  timelineDateRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  timelineDateLabel: { fontSize: 13, fontWeight: '800', color: '#1A1A1A' },
-  timelineDateTotal: { fontSize: 13, fontWeight: '700', color: '#4CAF50' },
-  timelineItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
-  timelineIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  timelineInfo: { flex: 1 },
-  timelineTitle: { fontSize: 14, fontWeight: '600', color: '#1A1A1A' },
-  timelineCategory: { fontSize: 11, color: '#888', marginTop: 1 },
-  timelinePaidBy: { fontSize: 11, color: '#4CAF50', marginTop: 2, fontWeight: '600' },
-  timelineAmount: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
-  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginHorizontal: 0, marginBottom: 8, backgroundColor: '#fff', borderRadius: 14, borderWidth: 1.5, borderColor: '#E0E0E0', borderStyle: 'dashed' },
-  addBtnIcon: { fontSize: 18, color: '#4CAF50', fontWeight: '700' },
-  addBtnText: { fontSize: 14, fontWeight: '600', color: '#4CAF50' },
-  balanceCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1, marginBottom: 8 },
-  balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
-  balanceAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center' },
-  balanceName: { flex: 1, fontSize: 14, fontWeight: '600', color: '#1A1A1A' },
-  balanceAmount: { fontSize: 15, fontWeight: '800', color: '#888' },
-  settledCard: { backgroundColor: '#E8F5E9', borderRadius: 16, padding: 24, alignItems: 'center' },
-  settledText: { fontSize: 18, fontWeight: '800', color: '#2E7D32' },
-  settledSub: { fontSize: 13, color: '#4CAF50', marginTop: 4 },
-  debtsCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
-  debtRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
-  debtRowBorder: { borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
-  debtAvatars: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  debtArrow: { fontSize: 14, color: '#888' },
-  debtInfo: { flex: 1 },
-  debtText: { fontSize: 14, color: '#555' },
-  debtName: { fontWeight: '700', color: '#1A1A1A' },
-  debtAmount: { fontSize: 16, fontWeight: '900', color: '#F44336' },
+
+  // Header
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 14, gap: 8, backgroundColor: COLORS.bg },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: COLORS.ink, letterSpacing: -0.3 },
+  headerSubtitle: { fontSize: 14, fontWeight: '700', color: COLORS.green, marginTop: 2 },
+  headerAddBtn: { backgroundColor: COLORS.green, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10 },
+  headerAddBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  headerIconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.cream, alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
+  headerIconBtnText: { fontSize: 18, color: COLORS.ink, fontWeight: '700' },
+  backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.cream },
+  backBtnText: { fontSize: 22, color: COLORS.ink, fontWeight: '600', marginTop: -2 },
+
+  // Hero
+  heroCard: {
+    marginHorizontal: 16, marginTop: 4, marginBottom: 8, borderRadius: 28, padding: 20,
+    backgroundColor: COLORS.cream, overflow: 'hidden',
+    shadowColor: '#8A7A55', shadowOpacity: 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, elevation: 4,
+    minHeight: 340,
+  },
+  heroIllustration: { ...StyleSheet.absoluteFillObject },
+  heroBlob: { position: 'absolute' },
+  heroEmojiWatermark: { position: 'absolute', fontSize: 120, top: 6, right: -10, opacity: 0.16 },
+  heroTopRow: { flexDirection: 'row', justifyContent: 'flex-start' },
+  heroProgressPill: { backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, minWidth: 150 },
+  heroProgressLabel: { fontSize: 11, fontWeight: '700', color: COLORS.inkSoft, marginBottom: 2 },
+  heroProgressValue: { fontSize: 13, fontWeight: '800', color: COLORS.ink, marginBottom: 6 },
+  heroProgressBarBg: { height: 4, borderRadius: 2, backgroundColor: 'rgba(31,109,76,0.15)', overflow: 'hidden' },
+  heroProgressBarFill: { height: '100%', backgroundColor: COLORS.green, borderRadius: 2 },
+  heroCenter: { alignItems: 'center', justifyContent: 'center', marginVertical: 18 },
+  ringBackdrop: { alignItems: 'center', justifyContent: 'center' },
+  ringTextWrap: { position: 'absolute', alignItems: 'center' },
+  ringAmount: { fontSize: 26, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.5 },
+  ringSub: { fontSize: 12, fontWeight: '600', color: COLORS.inkSoft, marginTop: 1 },
+  ringPercent: { fontSize: 12, fontWeight: '800', color: COLORS.green, marginTop: 4 },
+  heroBottomRow: { alignItems: 'center', gap: 10 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
+  statusBadgeText: { fontSize: 13, fontWeight: '800' },
+  avgAvailableRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  avgAvailableText: { fontSize: 12, color: COLORS.inkSoft, fontWeight: '500' },
+  avgAvailableAmount: { fontWeight: '800', color: COLORS.ink },
+
+  // Sections
+  sectionWrap: { marginHorizontal: 16, marginBottom: 18 },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  sectionTitle: { fontSize: 11, fontWeight: '800', color: COLORS.inkFaint, letterSpacing: 0.9 },
+  sectionLink: { fontSize: 12, fontWeight: '700', color: COLORS.green },
+
+  // Smart insight
+  insightCard: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: COLORS.greenSoft,
+    borderRadius: 20, padding: 16,
+  },
+  insightSparkle: { fontSize: 16, marginTop: 1 },
+  insightText: { flex: 1, fontSize: 14, fontWeight: '600', color: COLORS.green, lineHeight: 20 },
+
+  // Snapshot
+  snapshotRow: { flexDirection: 'row', gap: 12 },
+  snapshotCard: {
+    flex: 1, backgroundColor: '#fff', borderRadius: 22, padding: 16,
+    shadowColor: '#8A7A55', shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  snapshotIconWrap: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  snapshotLabel: { fontSize: 12, fontWeight: '600', color: COLORS.inkSoft, marginBottom: 4 },
+  snapshotAmount: { fontSize: 24, fontWeight: '900', color: COLORS.ink, letterSpacing: -0.5 },
+  snapshotDelta: { fontSize: 11, fontWeight: '700', marginTop: 6 },
+
+  // Generic card / rows
+  card: {
+    backgroundColor: '#fff', borderRadius: 22, paddingHorizontal: 14,
+    shadowColor: '#8A7A55', shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  catRowBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  catRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  catIconWrap: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  catMiddle: { flex: 1 },
+  catName: { fontSize: 14, fontWeight: '700', color: COLORS.ink, marginBottom: 6 },
+  catBarBg: { height: 5, backgroundColor: COLORS.border, borderRadius: 3, overflow: 'hidden' },
+  catBarFill: { height: '100%', borderRadius: 3 },
+  catRight: { alignItems: 'flex-end', minWidth: 60 },
+  catPercent: { fontSize: 13, fontWeight: '800' },
+  catAmount: { fontSize: 13, fontWeight: '700', color: COLORS.inkSoft, marginTop: 2 },
+
+  // Upcoming
+  upcomingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  upcomingWhen: { fontSize: 11, fontWeight: '700', color: COLORS.green, marginBottom: 2 },
+  upcomingEstimate: { fontSize: 11, color: COLORS.inkFaint, marginTop: 2 },
+
+  // Recent
+  recentRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  recentSub: { fontSize: 12, color: COLORS.inkSoft, fontWeight: '500' },
+  recentTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  sharedPill: { backgroundColor: COLORS.greenSoft, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
+  sharedPillText: { fontSize: 10, fontWeight: '800', color: COLORS.green },
+  yourShareText: { fontSize: 10, fontWeight: '600', color: COLORS.inkFaint, marginTop: 2 },
+
+  // Empty state
+  emptyCard: { alignItems: 'center', paddingVertical: 48, backgroundColor: COLORS.cream, borderRadius: 22 },
+  emptyTitle: { fontSize: 16, fontWeight: '800', color: COLORS.ink },
+  emptySub: { fontSize: 13, color: COLORS.inkSoft, marginTop: 4, textAlign: 'center', paddingHorizontal: 24 },
+
+  // Timeline
+  timelineDateRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingHorizontal: 2 },
+  timelineDateLabel: { fontSize: 13, fontWeight: '800', color: COLORS.ink },
+  timelineDateSub: { fontSize: 12, color: COLORS.inkFaint },
+  timelineDayTotal: { fontSize: 12, fontWeight: '700', color: COLORS.green, textAlign: 'right', marginTop: 8, marginRight: 4 },
+  timelineItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14 },
+  timelineTrack: { width: 10, alignItems: 'center', alignSelf: 'stretch' },
+  timelineDot: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
+  timelineLine: { flex: 1, width: 1.5, backgroundColor: COLORS.border, marginTop: 4 },
+  timelinePaidBy: { fontSize: 11, color: COLORS.green, marginTop: 2, fontWeight: '700' },
+
+  // Settlement
+  companionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  avatarCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.creamDark, alignItems: 'center', justifyContent: 'center' },
+  avatarInitials: { fontSize: 14, fontWeight: '800', color: COLORS.green },
+  companionAmount: { fontSize: 15, fontWeight: '800', color: COLORS.ink },
+  settledCard: { backgroundColor: COLORS.greenSoft, borderRadius: 22, padding: 28, alignItems: 'center' },
+  settledText: { fontSize: 17, fontWeight: '800', color: COLORS.green },
+  settledSub: { fontSize: 13, color: COLORS.green, marginTop: 4, opacity: 0.8 },
+  settlementSummaryCard: { backgroundColor: COLORS.greenSoft, borderRadius: 22, padding: 22, alignItems: 'center' },
+  settlementEmoji: { fontSize: 30, marginBottom: 8 },
+  settlementLine: { fontSize: 14, color: COLORS.ink, fontWeight: '600' },
+  settlementName: { fontWeight: '800' },
+  settlementAmount: { fontSize: 26, fontWeight: '900', color: COLORS.green, marginTop: 4 },
+  requestBtn: { backgroundColor: COLORS.green, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 28, marginTop: 16, alignSelf: 'stretch', alignItems: 'center' },
+  requestBtnText: { fontSize: 15, fontWeight: '800', color: '#fff' },
+  howItWorksCard: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: COLORS.amberSoft, borderRadius: 18, padding: 14, marginTop: 14 },
+  howItWorksTitle: { fontSize: 13, fontWeight: '800', color: COLORS.amber, marginBottom: 2 },
+  howItWorksSub: { fontSize: 12, color: COLORS.amber, opacity: 0.85, lineHeight: 17 },
+
+  // FAB
+  fab: {
+    position: 'absolute', bottom: 24, right: 20, width: 58, height: 58, borderRadius: 29,
+    backgroundColor: COLORS.green, alignItems: 'center', justifyContent: 'center',
+    shadowColor: COLORS.green, shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 6,
+  },
+  fabIcon: { fontSize: 28, color: '#fff', fontWeight: '300' },
+
+  // FAB Sheet
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(27,27,31,0.4)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 30 },
+  sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: COLORS.border, alignSelf: 'center', marginBottom: 12 },
+  sheetRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  sheetRowText: { flex: 1, fontSize: 15, fontWeight: '700', color: COLORS.ink },
+  sheetChevron: { fontSize: 18, color: COLORS.inkFaint },
+  comingSoonTag: { fontSize: 11, fontWeight: '700', color: COLORS.inkFaint, backgroundColor: COLORS.cream, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
+  sheetCancel: { marginTop: 10, backgroundColor: COLORS.cream, borderRadius: 18, paddingVertical: 15, alignItems: 'center' },
+  sheetCancelText: { fontSize: 15, fontWeight: '700', color: COLORS.ink },
 });

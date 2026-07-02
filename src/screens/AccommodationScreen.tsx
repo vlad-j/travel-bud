@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  TextInput, Linking, Dimensions, ActivityIndicator, Alert, Platform,
+  TextInput, Linking, Dimensions, ActivityIndicator, Alert, Platform, ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
@@ -20,6 +20,9 @@ import { useCurrentTrip, currentTripIdRef } from '../context/TripContext';
 import { createActivitiesFromAccommodation, deleteActivitiesBySource, deleteDocumentsBySource } from '../lib/itineraryAutoCreate';
 import { parseBookingPDF, ParsedAccommodation } from '../lib/pdfParser';
 import { useRealtimeSync } from '../../hooks/useRealtimeSync';
+import { getDestinationHero } from '../lib/destinationHero';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+
 
 const { width } = Dimensions.get('window');
 
@@ -111,6 +114,7 @@ export default function AccommodationScreen() {
   const navigation = useNavigation();
   const route = useRoute<any>();
   const { currentTripId } = useCurrentTrip();
+  const tabBarHeight = useBottomTabBarHeight();
 
   const [trip, setTrip] = useState<any>(null);
   const [accommodations, setAccommodations] = useState<any[]>([]);
@@ -174,7 +178,7 @@ useFocusEffect(
 useRealtimeSync({
   tripId: currentTripIdRef.current,
   tables: ['accommodations'],
-  onChange: loadData,
+  onChange: () => loadData(currentTripIdRef.current ?? route.params?.tripId),
 });
 
 async function handlePickFile() {
@@ -357,7 +361,7 @@ async function handlePickFile() {
               />
             ))
           )}
-          <View style={{ height: 24 }} />
+          <View style={{ height: tabBarHeight + 24 }} />
         </ScrollView>
       </SafeAreaView>
     );
@@ -397,7 +401,7 @@ async function handlePickFile() {
             <Dot color="#DDD" size={4} style={{ position: 'relative', marginLeft: 8 }} />
             <Sparkle color="#FF9800" size={10} style={{ position: 'relative', marginLeft: 6 }} />
           </View>
-          <View style={{ height: 24 }} />
+          <View style={{ height: tabBarHeight + 24 }} />
         </ScrollView>
       </SafeAreaView>
     );
@@ -414,7 +418,7 @@ async function handlePickFile() {
           <Text style={styles.title}>Import from PDF</Text>
           <View style={{ width: 32 }} />
         </View>
-        <ScrollView contentContainerStyle={pdfStyles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[pdfStyles.content, { paddingBottom: tabBarHeight + 24 }]} showsVerticalScrollIndicator={false}>
           <View style={pdfStyles.illustration}>
             <View style={pdfStyles.illBg}>
               <View style={[pdfStyles.illHill, { left: -10, backgroundColor: '#C8E6C9' }]} />
@@ -448,7 +452,7 @@ async function handlePickFile() {
           <Text style={styles.title}>Review & Confirm</Text>
           <View style={{ width: 32 }} />
         </View>
-        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
           <View style={reviewStyles.hero}>
             <View style={reviewStyles.heroBg}>
               <View style={[reviewStyles.heroHill, { left: -10, backgroundColor: '#C8E6C9' }]} />
@@ -466,14 +470,15 @@ async function handlePickFile() {
             <ReviewRow label="Price (for stay)" value={priceForStay || '—'} />
             <ReviewRow label="Booking reference" value={bookingRef || '—'} last />
           </View>
-<TouchableOpacity style={reviewStyles.confirmBtn} onPress={handleSave} disabled={saving}>
-  {saving ? <ActivityIndicator color="#fff" /> : <Text style={reviewStyles.confirmBtnText}>Confirm Import</Text>}
-</TouchableOpacity>
-<TouchableOpacity style={reviewStyles.editBtn} onPress={() => setScreen('manual1')}>
-  <Text style={reviewStyles.editBtnText}>Looks wrong? Edit details</Text>
-</TouchableOpacity>
-          <View style={{ height: 24 }} />
         </ScrollView>
+        <View style={[manualStyles.footer, { paddingBottom: tabBarHeight + 16 }]}>
+          <TouchableOpacity style={[reviewStyles.confirmBtn, { marginTop: 0 }]} onPress={handleSave} disabled={saving}>
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={reviewStyles.confirmBtnText}>Confirm Import</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity style={reviewStyles.editBtn} onPress={() => setScreen('manual1')}>
+            <Text style={reviewStyles.editBtnText}>Looks wrong? Edit details</Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
@@ -489,7 +494,7 @@ async function handlePickFile() {
           <Text style={styles.title}>Import from Gmail</Text>
           <View style={{ width: 32 }} />
         </View>
-        <ScrollView contentContainerStyle={gmailIntroStyles.content}>
+        <ScrollView contentContainerStyle={[gmailIntroStyles.content, { paddingBottom: tabBarHeight + 24 }]}>
           <View style={gmailIntroStyles.illustration}>
             <View style={gmailIntroStyles.illBg}>
               <View style={[gmailIntroStyles.illHill, { left: -10, backgroundColor: '#C8E6C9' }]} />
@@ -547,7 +552,7 @@ async function handlePickFile() {
               ))}
             </View>
           )}
-          <View style={{ height: 24 }} />
+          <View style={{ height: tabBarHeight + 24 }} />
         </ScrollView>
       </SafeAreaView>
     );
@@ -562,7 +567,7 @@ async function handlePickFile() {
           <Text style={styles.title}>Add Manually</Text>
           <View style={{ width: 32 }} />
         </View>
-        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
           <StepIndicator current={1} total={4} />
           <Text style={manualStyles.sectionTitle}>Stay Details</Text>
           <F label="Property name" placeholder="e.g. Villa Padi Ubud" value={name} onChangeText={setName} />
@@ -576,11 +581,12 @@ async function handlePickFile() {
             ))}
           </View>
           <F label="Address" placeholder="Enter full address" value={address} onChangeText={setAddress} />
+        </ScrollView>
+        <View style={[manualStyles.footer, { paddingBottom: tabBarHeight + 16 }]}>
           <TouchableOpacity style={[manualStyles.continueBtn, !name.trim() && manualStyles.continueBtnDisabled]} onPress={() => setScreen('manual2')} disabled={!name.trim()}>
             <Text style={manualStyles.continueBtnText}>Continue</Text>
           </TouchableOpacity>
-          <View style={{ height: 24 }} />
-        </ScrollView>
+        </View>
       </SafeAreaView>
     );
   }
@@ -594,7 +600,7 @@ async function handlePickFile() {
           <Text style={styles.title}>Add Manually</Text>
           <View style={{ width: 32 }} />
         </View>
-        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
           <StepIndicator current={2} total={4} />
           <Text style={manualStyles.sectionTitle}>Dates</Text>
 
@@ -646,13 +652,13 @@ async function handlePickFile() {
           {showCheckInTimePicker && <DateTimePicker value={checkInTime ?? new Date()} mode="time" display={Platform.OS === 'ios' ? 'spinner' : 'default'} is24Hour onChange={(_, d) => { setShowCheckInTimePicker(Platform.OS === 'ios'); if (d) setCheckInTime(d); }} />}
           {showCheckOutDatePicker && <DateTimePicker value={checkOutDate ?? new Date()} mode="date" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={(_, d) => { setShowCheckOutDatePicker(Platform.OS === 'ios'); if (d) setCheckOutDate(d); }} />}
           {showCheckOutTimePicker && <DateTimePicker value={checkOutTime ?? new Date()} mode="time" display={Platform.OS === 'ios' ? 'spinner' : 'default'} is24Hour onChange={(_, d) => { setShowCheckOutTimePicker(Platform.OS === 'ios'); if (d) setCheckOutTime(d); }} />}
-
+        </ScrollView>
+        <View style={[manualStyles.footer, { paddingBottom: tabBarHeight + 16 }]}>
           <View style={manualStyles.btnRow}>
             <TouchableOpacity style={manualStyles.backBtn2} onPress={() => setScreen('manual1')}><Text style={manualStyles.backBtn2Text}>Back</Text></TouchableOpacity>
             <TouchableOpacity style={manualStyles.continueBtn2} onPress={() => setScreen('manual3')}><Text style={manualStyles.continueBtn2Text}>Continue</Text></TouchableOpacity>
           </View>
-          <View style={{ height: 24 }} />
-        </ScrollView>
+        </View>
       </SafeAreaView>
     );
   }
@@ -666,7 +672,7 @@ async function handlePickFile() {
           <Text style={styles.title}>Add Manually</Text>
           <View style={{ width: 32 }} />
         </View>
-        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
           <StepIndicator current={3} total={4} />
           <Text style={manualStyles.sectionTitle}>Extras & Amenities</Text>
           <Text style={manualStyles.sectionSub}>Select what's included</Text>
@@ -680,12 +686,13 @@ async function handlePickFile() {
           </View>
           <F label="Booking reference" placeholder="e.g. #VPU123456" value={bookingRef} onChangeText={setBookingRef} optional />
           <F label="Price (for stay)" placeholder="e.g. €480" value={priceForStay} onChangeText={setPriceForStay} optional />
+        </ScrollView>
+        <View style={[manualStyles.footer, { paddingBottom: tabBarHeight + 16 }]}>
           <View style={manualStyles.btnRow}>
             <TouchableOpacity style={manualStyles.backBtn2} onPress={() => setScreen('manual2')}><Text style={manualStyles.backBtn2Text}>Back</Text></TouchableOpacity>
             <TouchableOpacity style={manualStyles.continueBtn2} onPress={() => setScreen('manual4')}><Text style={manualStyles.continueBtn2Text}>Continue</Text></TouchableOpacity>
           </View>
-          <View style={{ height: 24 }} />
-        </ScrollView>
+        </View>
       </SafeAreaView>
     );
   }
@@ -699,7 +706,7 @@ async function handlePickFile() {
           <Text style={styles.title}>Add Manually</Text>
           <View style={{ width: 32 }} />
         </View>
-        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
           <StepIndicator current={4} total={4} />
           <Text style={manualStyles.sectionTitle}>Review</Text>
           <View style={reviewStyles.detailsCard}>
@@ -712,14 +719,15 @@ async function handlePickFile() {
             {bookingRef ? <ReviewRow label="Booking reference" value={bookingRef} /> : null}
             <ReviewRow label="Price" value={priceForStay || '—'} last />
           </View>
-          <TouchableOpacity style={[reviewStyles.confirmBtn, saving && { opacity: 0.7 }]} onPress={handleSave} disabled={saving}>
+        </ScrollView>
+        <View style={[manualStyles.footer, { paddingBottom: tabBarHeight + 16 }]}>
+          <TouchableOpacity style={[reviewStyles.confirmBtn, saving && { opacity: 0.7 }, { marginTop: 0 }]} onPress={handleSave} disabled={saving}>
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={reviewStyles.confirmBtnText}>Save Accommodation</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={reviewStyles.editBtn} onPress={() => setScreen('manual1')}>
             <Text style={reviewStyles.editBtnText}>Edit details</Text>
           </TouchableOpacity>
-          <View style={{ height: 24 }} />
-        </ScrollView>
+        </View>
       </SafeAreaView>
     );
   }
@@ -755,10 +763,12 @@ async function handlePickFile() {
               )}
             </View>
           )}
+        </ScrollView>
+        <View style={[manualStyles.footer, { paddingBottom: tabBarHeight + 16 }]}>
           <TouchableOpacity style={successStyles.viewBtn} onPress={goToOverview}>
             <Text style={successStyles.viewBtnText}>View in Accommodation</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </View>
       </SafeAreaView>
     );
   }
@@ -767,6 +777,7 @@ async function handlePickFile() {
 }
 
 function AccommodationCard({ acc, onDelete, onEdit }: { acc: any; onDelete: () => void; onEdit: () => void }) {
+  const hero = getDestinationHero(acc.name, acc.address);
   const openMaps = () => {
     if (acc.address) Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(acc.address)}`);
   };
@@ -786,14 +797,23 @@ function AccommodationCard({ acc, onDelete, onEdit }: { acc: any; onDelete: () =
         ]);
       }}
     >
-      <View style={cardStyles.heroScene}>
-        <View style={cardStyles.sky} />
-        <View style={cardStyles.ground} />
-        <View style={[cardStyles.hill, { left: -10, backgroundColor: '#81C784' }]} />
-        <View style={[cardStyles.hill, { right: -10, backgroundColor: '#66BB6A', width: 120 }]} />
-        <HouseIcon size={64} color="#fff" />
-        <Sparkle color="#FFD700" size={12} style={{ position: 'absolute', right: 30, top: 18 }} />
-      </View>
+{hero.image ? (
+  <ImageBackground
+    source={hero.image}
+    style={cardStyles.heroScene}
+    imageStyle={cardStyles.heroImage}
+    resizeMode="cover"
+  />
+) : (
+  <View style={[cardStyles.heroScene, { backgroundColor: hero.background }]}>
+    <View style={cardStyles.sky} />
+    <View style={cardStyles.ground} />
+    <View style={[cardStyles.hill, { left: -10, backgroundColor: hero.hillBack }]} />
+    <View style={[cardStyles.hill, { right: -10, backgroundColor: hero.hillFront, width: 120 }]} />
+    <HouseIcon size={64} color="#fff" />
+    <Sparkle color="#FFD700" size={12} style={{ position: 'absolute', right: 30, top: 18 }} />
+  </View>
+)}
       <View style={cardStyles.nameRow}>
         <Text style={cardStyles.propertyName}>{acc.name}</Text>
         <View style={cardStyles.statusBadge}><Text style={cardStyles.statusText}>UPCOMING</Text></View>
@@ -891,7 +911,12 @@ const dtStyles = StyleSheet.create({
 const cardStyles = StyleSheet.create({
   card: { backgroundColor: '#fff', marginTop: 16, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#F0F0F0', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, marginBottom: 8 },
   heroScene: { height: 180, position: 'relative', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
-  sky: { ...StyleSheet.absoluteFillObject, backgroundColor: '#81D4FA' },
+  
+  heroImage: {
+  borderTopLeftRadius: 20,
+  borderTopRightRadius: 20,
+},
+sky: { ...StyleSheet.absoluteFillObject, backgroundColor: '#81D4FA' },
   ground: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 40, backgroundColor: '#A5D6A7' },
   hill: { position: 'absolute', bottom: 0, width: 140, height: 70, borderRadius: 50 },
   nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 },
@@ -988,6 +1013,13 @@ const reuseStyles = StyleSheet.create({
 });
 
 const manualStyles = StyleSheet.create({
+  footer: {
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#EFEFEF',
+  },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1A1A1A', marginBottom: 4, textAlign: 'center' },
   sectionSub: { fontSize: 13, color: '#888', textAlign: 'center', marginBottom: 16 },
   platformRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },

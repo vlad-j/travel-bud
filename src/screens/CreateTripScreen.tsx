@@ -119,14 +119,20 @@ export default function CreateTripScreen() {
       role: 'owner',
     });
 
-    for (let i = 0; i < selectedDestinations.length; i++) {
-      await supabase.from('destinations').insert({
-        trip_id: trip.id,
-        name: selectedDestinations[i],
-        country: selectedDestinations[i],
-        order_index: i,
-      });
-    }
+for (let i = 0; i < selectedDestinations.length; i++) {
+  const { error } = await supabase.from('destinations').insert({
+    trip_id: trip.id,
+    name: selectedDestinations[i],
+    country: selectedDestinations[i],
+    order_index: i,
+    nights: 1,
+  });
+
+  if (error) {
+    console.error('Failed to add destination:', error.message);
+    Alert.alert("Couldn't add destination", error.message);
+  }
+}
 
     setSaving(false);
     Alert.alert('🎉 Trip created!', `${tripName} is ready!`, [

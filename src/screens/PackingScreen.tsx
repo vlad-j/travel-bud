@@ -104,9 +104,14 @@ export default function PackingScreen() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [menuVisible, setMenuVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
-  const [filter, setFilter] = useState<'unpacked' | 'packed'>('unpacked');
   const statusBarHeight = useStatusBarHeight();
   const swipeRefs = useRef<Map<string, Swipeable | null>>(new Map());
+  const openSwipeIdRef = useRef<string | null>(null);
+
+  function closeAllSwipes() {
+    swipeRefs.current.forEach((ref) => ref?.close());
+    openSwipeIdRef.current = null;
+  }
 
   const loadData = React.useCallback(async (tripId?: string) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -256,6 +261,61 @@ export default function PackingScreen() {
     { label: 'Clear completed', icon: '✅', onPress: clearCompleted },
   ];
 
+  function renderItemRow(item: any) {
+    return (
+      <Swipeable
+        ref={(ref) => swipeRefs.current.set(item.id, ref)}
+        onSwipeableWillOpen={() => {
+          if (openSwipeIdRef.current && openSwipeIdRef.current !== item.id) {
+            swipeRefs.current.get(openSwipeIdRef.current)?.close();
+          }
+          openSwipeIdRef.current = item.id;
+        }}
+        onSwipeableClose={() => {
+          if (openSwipeIdRef.current === item.id) openSwipeIdRef.current = null;
+        }}
+        renderLeftActions={() => (
+          <TouchableOpacity
+            style={styles.swipePackAction}
+            onPress={() => { toggleItem(item); swipeRefs.current.get(item.id)?.close(); }}
+          >
+            <Text style={styles.swipeActionText}>{item.packed ? 'Unpack' : 'Pack'}</Text>
+          </TouchableOpacity>
+        )}
+        renderRightActions={() => (
+          <TouchableOpacity
+            style={styles.swipeDeleteAction}
+            onPress={() => deleteItem(item)}
+          >
+            <Text style={styles.swipeActionText}>Delete</Text>
+          </TouchableOpacity>
+        )}
+      >
+        <TouchableOpacity
+          style={styles.itemRow}
+          onPress={() => toggleItem(item)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.checkbox, item.packed && styles.checkboxChecked]}>
+            {item.packed && <Text style={styles.checkMark}>✓</Text>}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.itemName, item.packed && styles.itemNamePacked]}>
+              {item.title}
+            </Text>
+            {(item.quantity > 1 || item.notes) && (
+              <Text style={styles.itemMeta} numberOfLines={1}>
+                {item.quantity > 1 ? `${item.quantity}${item.unit ? ` ${item.unit}` : 'x'}` : ''}
+                {item.quantity > 1 && item.notes ? ' · ' : ''}
+                {item.notes ?? ''}
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Swipeable>
+    );
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={[]}>
@@ -285,7 +345,11 @@ export default function PackingScreen() {
           <Text style={styles.emptySubtitle}>Create a trip to start packing</Text>
         </View>
       ) : (
-        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          onScrollBeginDrag={closeAllSwipes}
+        >
 
           {/* Hero */}
           <View style={[styles.heroCard, { backgroundColor: heroTheme.background, borderColor: heroTheme.border }]}>
@@ -400,27 +464,6 @@ export default function PackingScreen() {
               <Text style={styles.sectionTitle}>Packing list</Text>
             </View>
 
-            {categories.length > 0 && (
-              <View style={styles.filterRow}>
-                <TouchableOpacity
-                  style={[styles.filterPill, filter === 'unpacked' && styles.filterPillActive]}
-                  onPress={() => setFilter('unpacked')}
-                >
-                  <Text style={[styles.filterPillText, filter === 'unpacked' && styles.filterPillTextActive]}>
-                    ○ Unpacked ({unpackedItems})
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.filterPill, filter === 'packed' && styles.filterPillActive]}
-                  onPress={() => setFilter('packed')}
-                >
-                  <Text style={[styles.filterPillText, filter === 'packed' && styles.filterPillTextActive]}>
-                    ✓ Packed ({packedItems})
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
             {categories.length === 0 ? (
               <View style={styles.emptyListCard}>
                 <Text style={{ fontSize: 44, marginBottom: 10 }}>🧳</Text>
@@ -435,7 +478,8 @@ export default function PackingScreen() {
                 const catPacked = cat.items.filter((i) => i.packed).length;
                 const catTotal = cat.items.length;
                 const expand = isExpanded(cat);
-                const visibleItems = cat.items.filter((i) => filter === 'packed' ? i.packed : !i.packed);
+                const unpackedInCat = cat.items.filter((i) => !i.packed);
+                const packedInCat = cat.items.filter((i) => i.packed);
 
                 return (
                   <View key={cat.key} style={styles.categorySection}>
@@ -459,62 +503,20 @@ export default function PackingScreen() {
                     </TouchableOpacity>
 
                     {expand && (
-                      visibleItems.length === 0 ? (
-                        <View style={styles.card}>
-                          <Text style={styles.filteredEmptyText}>
-                            {filter === 'packed' ? 'Nothing packed yet in this category' : 'Everything here is packed 🎉'}
-                          </Text>
-                        </View>
-                      ) : (
-                        <View style={styles.card}>
-                          {visibleItems.map((item, index) => (
-                            <View key={item.id}>
-                              <Swipeable
-                                ref={(ref) => swipeRefs.current.set(item.id, ref)}
-                                renderLeftActions={() => (
-                                  <TouchableOpacity
-                                    style={styles.swipePackAction}
-                                    onPress={() => { toggleItem(item); swipeRefs.current.get(item.id)?.close(); }}
-                                  >
-                                    <Text style={styles.swipeActionText}>{item.packed ? 'Unpack' : 'Pack'}</Text>
-                                  </TouchableOpacity>
-                                )}
-                                renderRightActions={() => (
-                                  <TouchableOpacity
-                                    style={styles.swipeDeleteAction}
-                                    onPress={() => deleteItem(item)}
-                                  >
-                                    <Text style={styles.swipeActionText}>Delete</Text>
-                                  </TouchableOpacity>
-                                )}
-                              >
-                                <TouchableOpacity
-                                  style={styles.itemRow}
-                                  onPress={() => toggleItem(item)}
-                                  activeOpacity={0.7}
-                                >
-                                  <View style={[styles.checkbox, item.packed && styles.checkboxChecked]}>
-                                    {item.packed && <Text style={styles.checkMark}>✓</Text>}
-                                  </View>
-                                  <View style={{ flex: 1 }}>
-                                    <Text style={[styles.itemName, item.packed && styles.itemNamePacked]}>
-                                      {item.title}
-                                    </Text>
-                                    {(item.quantity > 1 || item.notes) && (
-                                      <Text style={styles.itemMeta} numberOfLines={1}>
-                                        {item.quantity > 1 ? `${item.quantity}${item.unit ? ` ${item.unit}` : 'x'}` : ''}
-                                        {item.quantity > 1 && item.notes ? ' · ' : ''}
-                                        {item.notes ?? ''}
-                                      </Text>
-                                    )}
-                                  </View>
-                                </TouchableOpacity>
-                              </Swipeable>
-                              {index < visibleItems.length - 1 && <View style={styles.divider} />}
-                            </View>
-                          ))}
-                        </View>
-                      )
+                      <View style={styles.card}>
+                        {unpackedInCat.map((item, index) => (
+                          <View key={item.id}>
+                            {renderItemRow(item)}
+                            {(index < unpackedInCat.length - 1 || packedInCat.length > 0) && <View style={styles.divider} />}
+                          </View>
+                        ))}
+                        {packedInCat.map((item, index) => (
+                          <View key={item.id}>
+                            {renderItemRow(item)}
+                            {index < packedInCat.length - 1 && <View style={styles.divider} />}
+                          </View>
+                        ))}
+                      </View>
                     )}
                   </View>
                 );
@@ -631,13 +633,6 @@ const styles = StyleSheet.create({
   essentialCheckbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#E0D5C7', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
   essentialCheckboxChecked: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
 
-  // Filter pills
-  filterRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  filterPill: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 14, backgroundColor: '#F0EBE5' },
-  filterPillActive: { backgroundColor: '#E8F5E9' },
-  filterPillText: { fontSize: 12, fontWeight: '700', color: '#8A817A' },
-  filterPillTextActive: { color: '#2E7D32' },
-
   emptyListCard: { alignItems: 'center', backgroundColor: '#fff', borderRadius: 22, paddingVertical: 40, paddingHorizontal: 20 },
   emptyAddBtn: { backgroundColor: '#4CAF50', borderRadius: 14, paddingHorizontal: 22, paddingVertical: 12, marginTop: 16 },
   emptyAddBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
@@ -654,7 +649,6 @@ const styles = StyleSheet.create({
   chevron: { fontSize: 15, color: '#8A817A' },
   chevronOpen: { transform: [{ rotate: '180deg' }] },
   card: { backgroundColor: '#fff', borderRadius: 18, paddingHorizontal: 14, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
-  filteredEmptyText: { fontSize: 12, color: '#8A817A', fontWeight: '600', paddingVertical: 16, textAlign: 'center' },
 
   itemRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, gap: 12, backgroundColor: '#fff' },
   checkbox: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#E0D5C7', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },

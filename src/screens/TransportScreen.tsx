@@ -1,214 +1,84 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  TextInput, Alert, ActivityIndicator,
+  Alert, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { currentTripIdRef } from '../context/TripContext';
-import StatusBadge from '../components/StatusBadge';
-import { MenuSheet } from '../components/BottomSheet';
-import BottomSheet, { SheetButton } from '../components/BottomSheet';
-import { Dot, Sparkle } from '../components/TravelDecorations';
-import { createActivityFromTransport, deleteActivitiesBySource, deleteDocumentsBySource } from '../lib/itineraryAutoCreate';
-import SectionBlock from '../components/SectionBlock';
+import { createActivityFromTransport } from '../lib/itineraryAutoCreate';
 import { useRealtimeSync } from '../../hooks/useRealtimeSync';
+import { useStatusBarHeight } from '../../hooks/useStatusBarHeight';
+import { getDestinationHero } from '../lib/destinationHero';
+import TransportCard, { formatDayMonth, formatDuration } from '../components/transport/TransportCard';
+import AddTransportSheet from '../components/transport/AddTransportSheet';
+import AddFlightModal from '../components/transport/AddFlightModal';
+import AddTransferModal from '../components/transport/AddTransferModal';
 
-const TRANSPORT_TYPES = ['Train', 'Ferry', 'Bus', 'Taxi', 'Rental Car'];
+const VISIBLE_LIMIT = 5;
 
-const TYPE_ICONS: Record<string, string> = {
-  Flight: '✈️', Train: '🚂', Ferry: '⛴️',
-  Bus: '🚌', Taxi: '🚗', 'Rental Car': '🚙',
-};
+// ─── Date helpers (matches Packing/Itinerary convention) ──────────────────
+function localDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
 
-const TABS = ['Flights', 'Transfers', 'Other'];
+function formatShortRange(startDate: string, endDate: string): string {
+  if (!startDate || !endDate) return '';
+  const s = localDate(startDate);
+  const e = localDate(endDate);
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const sameMonth = s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear();
+  if (sameMonth) return `${s.getDate()} – ${e.getDate()} ${MONTHS[e.getMonth()]} ${e.getFullYear()}`;
+  return `${s.getDate()} ${MONTHS[s.getMonth()]} – ${e.getDate()} ${MONTHS[e.getMonth()]} ${e.getFullYear()}`;
+}
 
-function F({ label, placeholder, value, onChangeText, optional, multiline }: {
-  label: string;
-  placeholder: string;
-  value: string;
-  onChangeText: (t: string) => void;
-  optional?: boolean;
-  multiline?: boolean;
-}) {
+function getDaysUntilStart(startDate: string): number {
+  const start = localDate(startDate);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(Math.ceil((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)), 0);
+}
+
+function getTotalDays(startDate: string, endDate: string): number {
+  const start = localDate(startDate);
+  const end = localDate(endDate);
+  return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+}
+
+function getCurrentDay(startDate: string, endDate: string): number {
+  const start = localDate(startDate);
+  const end = localDate(endDate);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (today < start) return 0;
+  if (today > end) return getTotalDays(startDate, endDate);
+  return Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+}
+
+// ─── Small stat block for the overview card ────────────────────────────────
+function StatBlock({ icon, value, label }: { icon: string; value: string | number; label: string }) {
   return (
-    <View style={fStyles.fieldWrap}>
-      <Text style={fStyles.label}>
-        {label}{optional ? <Text style={fStyles.optional}> (optional)</Text> : null}
-      </Text>
-      <TextInput
-        style={[fStyles.input, multiline && fStyles.multiline]}
-        placeholder={placeholder}
-        placeholderTextColor="#C0C0C0"
-        value={value}
-        onChangeText={onChangeText}
-        multiline={multiline}
-        numberOfLines={multiline ? 3 : 1}
-      />
+    <View style={styles.statBlock}>
+      <Text style={{ fontSize: 18 }}>{icon}</Text>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
 
-function FlightForm({ onSave, onClose }: { onSave: (data: any) => Promise<void>; onClose: () => void }) {
-  const [airline, setAirline] = useState('');
-  const [flightNum, setFlightNum] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [departureTime, setDepartureTime] = useState('');
-  const [arrivalTime, setArrivalTime] = useState('');
-  const [terminal, setTerminal] = useState('');
-  const [gate, setGate] = useState('');
-  const [seat, setSeat] = useState('');
-  const [bookingRef, setBookingRef] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const canSave = airline.trim() && flightNum.trim() && from.trim() && to.trim();
-
-  return (
-    <>
-      <F label="Airline" placeholder="e.g. Garuda Indonesia" value={airline} onChangeText={setAirline} />
-      <F label="Flight number" placeholder="e.g. GA408" value={flightNum} onChangeText={setFlightNum} />
-      <F label="From" placeholder="e.g. Yogyakarta" value={from} onChangeText={setFrom} />
-      <F label="To" placeholder="e.g. Bali" value={to} onChangeText={setTo} />
-      <View style={fStyles.row}>
-        <View style={fStyles.half}><F label="Departure" placeholder="2025-05-16 18:20" value={departureTime} onChangeText={setDepartureTime} optional /></View>
-        <View style={fStyles.half}><F label="Arrival" placeholder="2025-05-16 19:45" value={arrivalTime} onChangeText={setArrivalTime} optional /></View>
-      </View>
-      <View style={fStyles.row}>
-        <View style={fStyles.half}><F label="Terminal" placeholder="T1" value={terminal} onChangeText={setTerminal} optional /></View>
-        <View style={fStyles.half}><F label="Gate" placeholder="G3" value={gate} onChangeText={setGate} optional /></View>
-      </View>
-      <View style={fStyles.row}>
-        <View style={fStyles.half}><F label="Seat" placeholder="14A" value={seat} onChangeText={setSeat} optional /></View>
-        <View style={fStyles.half}><F label="Booking ref" placeholder="ABCDEF" value={bookingRef} onChangeText={setBookingRef} optional /></View>
-      </View>
-      <SheetButton
-        label={saving ? 'Saving...' : 'Save Flight'}
-        disabled={!canSave || saving}
-        onPress={async () => {
-          setSaving(true);
-          await onSave({
-            type: 'Flight', airline, flight_number: flightNum,
-            departure_location: from, arrival_location: to,
-            departure_time: departureTime || null, arrival_time: arrivalTime || null,
-            terminal, gate, seat, booking_reference: bookingRef, status: 'UPCOMING',
-          });
-          setSaving(false);
-          onClose();
-        }}
-      />
-    </>
-  );
-}
-
-function OtherTransportForm({ type, onSave, onClose }: { type: string; onSave: (data: any) => Promise<void>; onClose: () => void }) {
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [departureTime, setDepartureTime] = useState('');
-  const [arrivalTime, setArrivalTime] = useState('');
-  const [bookingRef, setBookingRef] = useState('');
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-  const canSave = from.trim() && to.trim();
-
-  return (
-    <>
-      <F label="From" placeholder="e.g. Ubud" value={from} onChangeText={setFrom} />
-      <F label="To" placeholder="e.g. Seminyak" value={to} onChangeText={setTo} />
-      <View style={fStyles.row}>
-        <View style={fStyles.half}><F label="Departure" placeholder="10:00" value={departureTime} onChangeText={setDepartureTime} optional /></View>
-        <View style={fStyles.half}><F label="Arrival" placeholder="11:30" value={arrivalTime} onChangeText={setArrivalTime} optional /></View>
-      </View>
-      <F label="Booking ref" placeholder="Optional" value={bookingRef} onChangeText={setBookingRef} optional />
-      <F label="Notes" placeholder="Optional notes" value={notes} onChangeText={setNotes} optional multiline />
-      <SheetButton
-        label={saving ? 'Saving...' : `Save ${type}`}
-        disabled={!canSave || saving}
-        onPress={async () => {
-          setSaving(true);
-          await onSave({
-            type, airline: null, flight_number: null,
-            departure_location: from, arrival_location: to,
-            departure_time: departureTime || null, arrival_time: arrivalTime || null,
-            terminal: null, gate: null, seat: null,
-            booking_reference: bookingRef || null, status: 'UPCOMING',
-          });
-          setSaving(false);
-          onClose();
-        }}
-      />
-    </>
-  );
-}
-
-function formatTime(ts: string | null): string {
-  if (!ts) return '—';
-  try { return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
-  catch { return ts; }
-}
-
-function formatDate(ts: string | null): string {
-  if (!ts) return '';
-  try { return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
-  catch { return ''; }
-}
-
-function EditTransportForm({ item, onSave, onClose }: { item: any; onSave: (id: string, data: any) => Promise<void>; onClose: () => void }) {
-  const [from, setFrom] = React.useState(item.departure_location ?? '');
-  const [to, setTo] = React.useState(item.arrival_location ?? '');
-  const [airline, setAirline] = React.useState(item.airline ?? '');
-  const [flightNum, setFlightNum] = React.useState(item.flight_number ?? '');
-  const [departureTime, setDepartureTime] = React.useState(item.departure_time ?? '');
-  const [arrivalTime, setArrivalTime] = React.useState(item.arrival_time ?? '');
-  const [saving, setSaving] = React.useState(false);
-
-  return (
-    <>
-      {item.type === 'Flight' && (
-        <>
-          <F label="Airline" placeholder="e.g. Garuda Indonesia" value={airline} onChangeText={setAirline} />
-          <F label="Flight number" placeholder="e.g. GA408" value={flightNum} onChangeText={setFlightNum} />
-        </>
-      )}
-      <F label="From" placeholder="Departure location" value={from} onChangeText={setFrom} />
-      <F label="To" placeholder="Arrival location" value={to} onChangeText={setTo} />
-      <F label="Departure time" placeholder="2025-05-16 18:20" value={departureTime} onChangeText={setDepartureTime} optional />
-      <F label="Arrival time" placeholder="2025-05-16 19:45" value={arrivalTime} onChangeText={setArrivalTime} optional />
-      <SheetButton
-        label={saving ? 'Saving...' : 'Save Changes'}
-        disabled={!from.trim() || !to.trim() || saving}
-        onPress={async () => {
-          setSaving(true);
-          await onSave(item.id, {
-            ...item,
-            departure_location: from,
-            arrival_location: to,
-            airline: airline || null,
-            flight_number: flightNum || null,
-            departure_time: departureTime || null,
-            arrival_time: arrivalTime || null,
-          });
-          setSaving(false);
-          onClose();
-        }}
-      />
-    </>
-  );
-}
-
 export default function TransportScreen() {
-  const [activeTab, setActiveTab] = useState('Flights');
-  const [menuVisible, setMenuVisible] = useState(false);
+  const navigation = useNavigation<any>();
+  const [addSheetVisible, setAddSheetVisible] = useState(false);
   const [addFlightVisible, setAddFlightVisible] = useState(false);
-  const [editItem, setEditItem] = useState<any | null>(null);
   const [addTransferVisible, setAddTransferVisible] = useState(false);
   const [addOtherVisible, setAddOtherVisible] = useState(false);
-  const [transportType, setTransportType] = useState('Train');
   const [transports, setTransports] = useState<any[]>([]);
+  const [trip, setTrip] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const navigation = useNavigation();
+  const [expanded, setExpanded] = useState(false);
+  const statusBarHeight = useStatusBarHeight();
 
   useFocusEffect(useCallback(() => { loadData(); }, []));
   useRealtimeSync({ tripId: currentTripIdRef.current, tables: ['transport'], onChange: loadData });
@@ -216,6 +86,14 @@ export default function TransportScreen() {
   async function loadData() {
     const tripId = currentTripIdRef.current;
     if (!tripId) { setLoading(false); return; }
+
+    const { data: tripData } = await supabase
+      .from('trips')
+      .select('*, destinations(id, name, country)')
+      .eq('id', tripId)
+      .single();
+    setTrip(tripData ?? null);
+
     const { data, error } = await supabase
       .from('transport')
       .select('*')
@@ -229,19 +107,36 @@ export default function TransportScreen() {
     const tripId = currentTripIdRef.current;
     if (!tripId) { Alert.alert('Error', 'No active trip.'); return; }
 
+    const { _addToBudget, _costAmount, ...transportData } = data;
+
     const { data: saved, error } = await supabase
       .from('transport')
-      .insert({ ...data, trip_id: tripId })
+      .insert({ ...transportData, trip_id: tripId })
       .select()
       .single();
 
     if (error) { Alert.alert('Error', error.message); return; }
 
-    // Auto-create itinerary activity
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user && saved) {
-        await createActivityFromTransport(saved.id, tripId, data, user.id);
+        await createActivityFromTransport(saved.id, tripId, transportData, user.id);
+
+        if (_addToBudget && _costAmount && parseFloat(_costAmount) > 0) {
+          const label = transportData.airline
+            ? `${transportData.airline}${transportData.flight_number ? ' ' + transportData.flight_number : ''}`
+            : `${transportData.type}: ${transportData.departure_location} → ${transportData.arrival_location}`;
+          await supabase.from('expenses').insert({
+            trip_id: tripId,
+            title: label,
+            amount: parseFloat(_costAmount),
+            currency: trip?.currency ?? 'EUR',
+            category: 'transport',
+            date: new Date().toISOString(),
+            paid_by: user.id,
+            notes: `${transportData.departure_location} → ${transportData.arrival_location}`,
+          });
+        }
       }
     } catch (e) {
       console.warn('Could not auto-create itinerary activity:', e);
@@ -251,288 +146,283 @@ export default function TransportScreen() {
     await loadData();
   }
 
-  async function handleDelete(id: string) {
-    Alert.alert('Delete', 'Remove this transport?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: async () => {
-          // Delete linked itinerary activities and documents
-          await deleteActivitiesBySource(id, 'transport');
-          await deleteDocumentsBySource(id, 'transport');
-          await supabase.from('transport').delete().eq('id', id);
-          await loadData();
-        },
-      },
-    ]);
+  // ─── Derived data ─────────────────────────────────────────────────────
+  const flights = transports.filter((t) => t.type === 'Flight');
+  const transfers = transports.filter((t) => ['Taxi', 'Rental Car'].includes(t.type));
+  const others = transports.filter((t) => !['Flight', 'Taxi', 'Rental Car'].includes(t.type));
+
+  const totalMinutes = transports.reduce((sum, t) => {
+    const dur = formatDuration(t.departure_time, t.arrival_time);
+    if (!dur) return sum;
+    const hMatch = dur.match(/(\d+)h/);
+    const mMatch = dur.match(/(\d+)m/);
+    const h = hMatch ? parseInt(hMatch[1], 10) : 0;
+    const m = mMatch ? parseInt(mMatch[1], 10) : 0;
+    return sum + h * 60 + m;
+  }, 0);
+  const totalTravelLabel = totalMinutes > 0
+    ? `${Math.floor(totalMinutes / 60)}h${totalMinutes % 60 ? ` ${totalMinutes % 60}m` : ''}`
+    : '—';
+
+  const heroDestination = trip?.destinations?.[0] ?? null;
+  const heroTheme = getDestinationHero(heroDestination?.name, heroDestination?.country);
+  const daysUntilStart = trip ? getDaysUntilStart(trip.start_date) : 0;
+  const totalDays = trip ? getTotalDays(trip.start_date, trip.end_date) : 0;
+  const currentDay = trip ? getCurrentDay(trip.start_date, trip.end_date) : 0;
+  const isCompleted = trip?.status === 'completed';
+  const isUpcoming = daysUntilStart > 0;
+
+  const visibleTransports = expanded ? transports : transports.slice(0, VISIBLE_LIMIT);
+  const hasMore = transports.length > VISIBLE_LIMIT;
+
+  // Group the visible slice by date, preserving arrival order.
+  const groups: { key: string; day: string; month: string; items: any[] }[] = [];
+  visibleTransports.forEach((t) => {
+    const dm = formatDayMonth(t.departure_time);
+    const key = dm ? `${dm.day}-${dm.month}` : 'unscheduled';
+    let group = groups.find((g) => g.key === key);
+    if (!group) {
+      group = { key, day: dm?.day ?? '', month: dm?.month ?? '', items: [] };
+      groups.push(group);
+    }
+    group.items.push(t);
+  });
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safe} edges={[]}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+        </View>
+      </SafeAreaView>
+    );
   }
-
-  const flights = transports.filter(t => t.type === 'Flight');
-  const transfers = transports.filter(t => ['Taxi', 'Rental Car'].includes(t.type));
-  const others = transports.filter(t => !['Flight', 'Taxi', 'Rental Car'].includes(t.type));
-  const nextUp = transports.find(t => t.status === 'UPCOMING') ?? transports[0];
-  const visibleList = activeTab === 'Flights' ? flights : activeTab === 'Transfers' ? transfers : others;
-
-  async function handleEdit(id: string, data: any) {
-    const { error } = await supabase.from('transport').update(data).eq('id', id);
-    if (error) { Alert.alert('Error', error.message); return; }
-    // Update linked activity
-    try {
-      await supabase.from('activities')
-        .update({
-          title: data.airline
-            ? `${data.airline}${data.flight_number ? ' ' + data.flight_number : ''}: ${data.departure_location} → ${data.arrival_location}`
-            : `${data.type}: ${data.departure_location} → ${data.arrival_location}`,
-          location: data.departure_location,
-        })
-        .eq('source_id', id)
-        .eq('source_type', 'transport');
-    } catch (e) {}
-    setEditItem(null);
-    await loadData();
-  }
-
-  const MENU_ITEMS = [
-    { label: 'Add flight', icon: '✈️', onPress: () => setAddFlightVisible(true) },
-    { label: 'Add transfer', icon: '🚗', onPress: () => setAddTransferVisible(true) },
-    { label: 'Add other transport', icon: '🚌', onPress: () => setAddOtherVisible(true) },
-  ];
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
-      <View style={styles.header}>
+      <View style={[styles.headerOverlay, { paddingTop: statusBarHeight + 8 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Transport</Text>
-        <TouchableOpacity onPress={() => setMenuVisible(true)}>
-          <Text style={{ fontSize: 22 }}>⋯</Text>
+        <TouchableOpacity style={styles.menuBtn} onPress={() => setAddSheetVisible(true)}>
+          <Text style={{ fontSize: 20 }}>⋯</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.tabRow}>
-        {TABS.map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.tab, activeTab === tab && styles.tabActive]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {loading ? (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color="#4CAF50" />
+      {!trip ? (
+        <View style={styles.emptyWrap}>
+          <Text style={{ fontSize: 48, marginBottom: 12 }}>🧭</Text>
+          <Text style={styles.emptyTitle}>No active trip</Text>
+          <Text style={styles.emptySubtitle}>Create a trip to start planning transport</Text>
         </View>
       ) : (
         <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
 
-          {nextUp && (
-            <SectionBlock title="NEXT UP" headerColor="#AED581" textColor="#33691E" icon={TYPE_ICONS[nextUp.type] ?? '🚌'}>
-              <View style={styles.featuredCard}>
-                <View style={styles.featuredTop}>
-                  <View style={styles.airlineRow}>
-                    <View style={styles.airlineIcon}>
-                      <Text style={{ fontSize: 22 }}>{TYPE_ICONS[nextUp.type] ?? '🚌'}</Text>
-                    </View>
-                    <View>
-                      <Text style={styles.airlineName}>{nextUp.airline ?? nextUp.type}</Text>
-                      {nextUp.flight_number ? <Text style={styles.flightNum}>{nextUp.flight_number}</Text> : null}
-                    </View>
-                  </View>
-                  <StatusBadge status={nextUp.status ?? 'UPCOMING'} />
-                </View>
+          {/* Hero */}
+          <View style={[styles.heroCard, { backgroundColor: heroTheme.background, borderColor: heroTheme.border }]}>
+            <View style={[styles.heroBlobOne, { backgroundColor: heroTheme.blobOne }]} />
+            <View style={[styles.heroBlobTwo, { backgroundColor: heroTheme.blobTwo }]} />
+            <View style={[styles.heroHillBack, { backgroundColor: heroTheme.hillBack }]} />
+            <View style={[styles.heroHillFront, { backgroundColor: heroTheme.hillFront }]} />
 
-                <View style={styles.routeRow}>
-                  <View style={styles.routeEnd}>
-                    <Text style={styles.airportCode}>{nextUp.departure_location}</Text>
-                  </View>
-                  <View style={styles.routeMiddle}>
-                    <Text style={styles.routeArrow}>→</Text>
-                  </View>
-                  <View style={[styles.routeEnd, styles.routeEndRight]}>
-                    <Text style={styles.airportCode}>{nextUp.arrival_location}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.timesRow}>
-                  <View style={styles.timeBlock}>
-                    <Text style={styles.timeValue}>{formatTime(nextUp.departure_time)}</Text>
-                    <Text style={styles.timeDate}>{formatDate(nextUp.departure_time)}</Text>
-                    {nextUp.terminal ? <Text style={styles.timeSub}>{nextUp.terminal}</Text> : null}
-                  </View>
-                  <View style={styles.planeIconCenter}>
-                    <Text style={{ fontSize: 28 }}>{TYPE_ICONS[nextUp.type] ?? '🚌'}</Text>
-                  </View>
-                  <View style={[styles.timeBlock, styles.timeBlockRight]}>
-                    <Text style={styles.timeValue}>{formatTime(nextUp.arrival_time)}</Text>
-                    <Text style={styles.timeDate}>{formatDate(nextUp.arrival_time)}</Text>
-                    {nextUp.gate ? <Text style={styles.timeSub}>{nextUp.gate}</Text> : null}
-                  </View>
-                </View>
-
-                {(nextUp.seat || nextUp.booking_reference) ? (
-                  <View style={styles.detailsRow}>
-                    {nextUp.seat ? (
-                      <View style={styles.detailItem}>
-                        <Text style={styles.detailLabel}>Seat</Text>
-                        <Text style={styles.detailValue}>{nextUp.seat}</Text>
-                      </View>
-                    ) : null}
-                    {nextUp.seat && nextUp.booking_reference ? <View style={styles.detailDivider} /> : null}
-                    {nextUp.booking_reference ? (
-                      <View style={styles.detailItem}>
-                        <Text style={styles.detailLabel}>Booking ref.</Text>
-                        <Text style={styles.detailValue}>{nextUp.booking_reference}</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                ) : null}
-              </View>
-            </SectionBlock>
-          )}
-
-          <SectionBlock
-            title={activeTab.toUpperCase()}
-            headerColor="#90CAF9"
-            textColor="#0D47A1"
-            icon={activeTab === 'Flights' ? '🛫' : activeTab === 'Transfers' ? '🚗' : '🚌'}
-          >
-            {visibleList.length === 0 ? (
-              <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                <Text style={{ fontSize: 32, marginBottom: 8 }}>
-                  {activeTab === 'Flights' ? '✈️' : activeTab === 'Transfers' ? '🚗' : '🚌'}
+            <View style={styles.heroTextBlock}>
+              <Text style={styles.heroName} numberOfLines={1}>
+                {heroDestination?.name ?? trip.name}
+              </Text>
+              {trip.start_date && trip.end_date && (
+                <Text style={styles.heroDates}>{formatShortRange(trip.start_date, trip.end_date)}</Text>
+              )}
+              <View style={[styles.heroPill, { backgroundColor: heroTheme.pillBg }]}>
+                <Text style={[styles.heroPillText, { color: heroTheme.text }]}>
+                  {isCompleted
+                    ? '✓ Trip completed'
+                    : isUpcoming
+                      ? `🗓 ${daysUntilStart} day${daysUntilStart === 1 ? '' : 's'} until trip`
+                      : `📍 Day ${currentDay} of ${totalDays}`}
                 </Text>
-                <Text style={{ fontSize: 14, color: '#888' }}>No {activeTab.toLowerCase()} yet</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Overview card */}
+          <View style={styles.overviewCard}>
+            {transports.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+                <Text style={{ fontSize: 34, marginBottom: 8 }}>🧭</Text>
+                <Text style={styles.overviewEmptyTitle}>No transport planned yet.</Text>
+                <Text style={styles.overviewEmptySubtitle}>Start building your journey.</Text>
+                <TouchableOpacity style={styles.overviewAddBtn} onPress={() => setAddSheetVisible(true)}>
+                  <Text style={styles.overviewAddBtnText}>＋ Add Transport</Text>
+                </TouchableOpacity>
               </View>
             ) : (
-              visibleList.map((t, index) => (
-                <View key={t.id}>
-                  <TouchableOpacity
-                    style={styles.flightRow}
-                    onLongPress={() => {
-                      Alert.alert(t.airline ? `${t.airline} ${t.flight_number ?? ''}` : t.type, 'What would you like to do?', [
-                        { text: 'Edit', onPress: () => setEditItem(t) },
-                        { text: 'Delete', style: 'destructive', onPress: () => handleDelete(t.id) },
-                        { text: 'Cancel', style: 'cancel' },
-                      ]);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.flightIcon}>
-                      <Text style={{ fontSize: 18 }}>{TYPE_ICONS[t.type] ?? '🚌'}</Text>
-                    </View>
-                    <View style={styles.flightInfo}>
-                      <Text style={styles.flightAirline}>{t.airline ?? t.type}</Text>
-                      <Text style={styles.flightNumber}>{t.departure_location} → {t.arrival_location}</Text>
-                      {t.departure_time ? <Text style={styles.flightTime}>{formatDate(t.departure_time)} · {formatTime(t.departure_time)}</Text> : null}
-                    </View>
-                    <StatusBadge status={t.status ?? 'UPCOMING'} small />
-                  </TouchableOpacity>
-                  {index < visibleList.length - 1 ? <View style={styles.divider} /> : null}
+              <>
+                <View style={styles.statsRow}>
+                  <StatBlock icon="✈️" value={flights.length} label="Flights" />
+                  <StatBlock icon="🚖" value={transfers.length} label="Transfers" />
+                  <StatBlock icon="🚌" value={others.length} label="Other" />
+                  <StatBlock icon="⏱" value={totalTravelLabel} label="Total travel" />
                 </View>
-              ))
+                <View style={styles.routesPill}>
+                  <Text style={styles.routesPillText}>📍 {transports.length} route{transports.length === 1 ? '' : 's'} planned</Text>
+                </View>
+              </>
             )}
-          </SectionBlock>
-
-          <Text style={styles.hint}>💡 Long press on an item to delete it</Text>
-
-          <View style={styles.footerDecor}>
-            <Dot color="#BBB" size={5} style={{ position: 'relative' }} />
-            <Dot color="#BBB" size={4} style={{ position: 'relative', marginLeft: 8 }} />
-            <Sparkle color="#FF9800" size={10} style={{ position: 'relative', marginLeft: 6 }} />
           </View>
+
+          {/* Timeline */}
+          {transports.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Your Journey</Text>
+
+              {groups.map((group, gi) => (
+                <View key={group.key} style={{ marginBottom: 4 }}>
+                  <Text style={styles.dateHeader}>{group.day ? `${group.day} ${group.month}` : 'No date set'}</Text>
+                  {group.items.map((item, ii) => {
+                    const isVeryLast = gi === groups.length - 1 && ii === group.items.length - 1;
+                    return (
+                      <View key={item.id} style={styles.timelineRow}>
+                        <View style={styles.timelineRail}>
+                          <View style={styles.timelineDot} />
+                          {!isVeryLast && <View style={styles.timelineLine} />}
+                        </View>
+                        <View style={{ flex: 1, marginBottom: 14 }}>
+                          <TransportCard
+                            item={item}
+                            onPress={() => navigation.navigate('TransportDetails', { transportId: item.id })}
+                          />
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+
+              {hasMore && !expanded && (
+                <TouchableOpacity style={styles.viewAllBtn} onPress={() => setExpanded(true)}>
+                  <Text style={styles.viewAllText}>View full timeline ({transports.length})</Text>
+                  <Text style={styles.viewAllChevron}>›</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           <View style={{ height: 24 }} />
         </ScrollView>
       )}
 
-      <MenuSheet visible={menuVisible} onClose={() => setMenuVisible(false)} items={MENU_ITEMS} />
+      {trip && (
+        <TouchableOpacity style={styles.fab} onPress={() => setAddSheetVisible(true)}>
+          <Text style={styles.fabText}>＋</Text>
+        </TouchableOpacity>
+      )}
 
-      <BottomSheet visible={addFlightVisible} onClose={() => setAddFlightVisible(false)} title="Add Flight">
-        <FlightForm onSave={handleSave} onClose={() => setAddFlightVisible(false)} />
-      </BottomSheet>
+      <AddTransportSheet
+        visible={addSheetVisible}
+        onClose={() => setAddSheetVisible(false)}
+        onSelectFlight={() => setAddFlightVisible(true)}
+        onSelectTransfer={() => setAddTransferVisible(true)}
+        onSelectOther={() => setAddOtherVisible(true)}
+      />
 
-      <BottomSheet visible={addTransferVisible} onClose={() => setAddTransferVisible(false)} title="Add Transfer">
-        <OtherTransportForm type="Taxi" onSave={handleSave} onClose={() => setAddTransferVisible(false)} />
-      </BottomSheet>
+      <AddFlightModal
+        visible={addFlightVisible}
+        onClose={() => setAddFlightVisible(false)}
+        tripName={trip?.name}
+        tripCurrency={trip?.currency}
+        destinationContext={heroDestination ? { name: heroDestination.name, country: heroDestination.country ?? null } : null}
+        onSave={handleSave}
+      />
 
-      <BottomSheet visible={addOtherVisible} onClose={() => setAddOtherVisible(false)} title="Add Transport">
-        <Text style={{ fontSize: 12, fontWeight: '700', color: '#888', marginBottom: 8 }}>Type</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, flexDirection: 'row', marginBottom: 8 }}>
-          {TRANSPORT_TYPES.map((t) => (
-            <TouchableOpacity
-              key={t}
-              style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: transportType === t ? '#4CAF50' : '#EBEBEB', backgroundColor: transportType === t ? '#E8F5E9' : '#F5F5F5' }}
-              onPress={() => setTransportType(t)}
-            >
-              <Text style={{ fontSize: 13, fontWeight: '600', color: transportType === t ? '#4CAF50' : '#666' }}>{t}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        <OtherTransportForm type={transportType} onSave={handleSave} onClose={() => setAddOtherVisible(false)} />
-      </BottomSheet>
+      <AddTransferModal
+        visible={addTransferVisible}
+        onClose={() => setAddTransferVisible(false)}
+        title="Add Transfer"
+        initialType="Taxi"
+        tripName={trip?.name}
+        tripCurrency={trip?.currency}
+        destinationContext={heroDestination ? { name: heroDestination.name, country: heroDestination.country ?? null } : null}
+        onSave={handleSave}
+      />
 
-      <BottomSheet visible={!!editItem} onClose={() => setEditItem(null)} title="Edit Transport">
-        {editItem && <EditTransportForm item={editItem} onSave={handleEdit} onClose={() => setEditItem(null)} />}
-      </BottomSheet>
+      <AddTransferModal
+        visible={addOtherVisible}
+        onClose={() => setAddOtherVisible(false)}
+        title="Add Other Transport"
+        initialType="Train"
+        tripName={trip?.name}
+        tripCurrency={trip?.currency}
+        destinationContext={heroDestination ? { name: heroDestination.name, country: heroDestination.country ?? null } : null}
+        onSave={handleSave}
+      />
+
     </SafeAreaView>
   );
 }
 
-const fStyles = StyleSheet.create({
-  fieldWrap: { marginBottom: 10 },
-  label: { fontSize: 12, fontWeight: '700', color: '#888', marginBottom: 5, letterSpacing: 0.3 },
-  optional: { fontWeight: '400', color: '#BBB' },
-  input: { backgroundColor: '#FAFAFA', borderRadius: 12, borderWidth: 0.5, borderColor: '#E0E0E0', paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: '#1A1A1A' },
-  multiline: { height: 70, textAlignVertical: 'top' },
-  row: { flexDirection: 'row', gap: 10 },
-  half: { flex: 1 },
-});
-
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#E8E8E8' },
-  scroll: { flex: 1, padding: 16 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  backBtn: { padding: 4 },
-  backIcon: { fontSize: 28, color: '#1A1A1A', fontWeight: '300' },
-  title: { fontSize: 24, fontWeight: '800', color: '#1A1A1A' },
-  tabRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#fff', gap: 8, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  tab: { paddingHorizontal: 20, paddingVertical: 7, borderRadius: 20, backgroundColor: '#F0F0F0' },
-  tabActive: { backgroundColor: '#4CAF50' },
-  tabText: { fontSize: 14, fontWeight: '600', color: '#666' },
-  tabTextActive: { color: '#fff' },
-  featuredCard: { padding: 8 },
-  featuredTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  airlineRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  airlineIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#E8F5E9', alignItems: 'center', justifyContent: 'center' },
-  airlineName: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
-  flightNum: { fontSize: 12, color: '#888' },
-  routeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  routeEnd: { flex: 2 },
-  routeEndRight: { alignItems: 'flex-end' },
-  routeMiddle: { flex: 1, alignItems: 'center' },
-  routeArrow: { fontSize: 22, color: '#1A1A1A' },
-  airportCode: { fontSize: 24, fontWeight: '900', color: '#1A1A1A' },
-  timesRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#F0F0F0', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', marginBottom: 14 },
-  timeBlock: { flex: 2 },
-  timeBlockRight: { alignItems: 'flex-end' },
-  timeValue: { fontSize: 20, fontWeight: '800', color: '#1A1A1A' },
-  timeDate: { fontSize: 12, color: '#888', marginTop: 2 },
-  timeSub: { fontSize: 12, color: '#666', marginTop: 4 },
-  planeIconCenter: { flex: 1, alignItems: 'center' },
-  detailsRow: { flexDirection: 'row', alignItems: 'center' },
-  detailItem: { flex: 1 },
-  detailDivider: { width: 1, height: 36, backgroundColor: '#E0E0E0', marginHorizontal: 16 },
-  detailLabel: { fontSize: 12, color: '#888', marginBottom: 4 },
-  detailValue: { fontSize: 18, fontWeight: '800', color: '#1A1A1A' },
-  flightRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
-  flightIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center' },
-  flightInfo: { flex: 1 },
-  flightAirline: { fontSize: 14, fontWeight: '600', color: '#1A1A1A' },
-  flightNumber: { fontSize: 12, color: '#888', marginTop: 2 },
-  flightTime: { fontSize: 11, color: '#BBB', marginTop: 2 },
-  divider: { height: 1, backgroundColor: '#F5F5F5' },
-  hint: { textAlign: 'center', fontSize: 12, color: '#BBB', marginBottom: 8 },
-  footerDecor: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 16 },
+  safe: { flex: 1, backgroundColor: '#FFF8F0' },
+  scroll: { flex: 1 },
+
+  headerOverlay: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 10 },
+  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  backIcon: { fontSize: 30, color: '#1A1A1A', fontWeight: '300' },
+  title: { fontSize: 18, fontWeight: '900', color: '#1A1A1A' },
+  menuBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+
+  emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: '#1A1A1A', marginBottom: 4 },
+  emptySubtitle: { fontSize: 13, color: '#8A817A', fontWeight: '600' },
+
+  // Hero
+  heroCard: {
+    marginHorizontal: 16, height: 150, borderRadius: 28, borderWidth: 1,
+    overflow: 'hidden', position: 'relative', justifyContent: 'flex-end', marginBottom: 20,
+  },
+  heroBlobOne: { position: 'absolute', width: 140, height: 140, borderRadius: 999, top: -50, left: -34, opacity: 0.78 },
+  heroBlobTwo: { position: 'absolute', width: 160, height: 160, borderRadius: 999, right: -54, bottom: -68, opacity: 0.72 },
+  heroHillBack: { position: 'absolute', left: -24, right: -40, bottom: -28, height: 70, borderTopLeftRadius: 120, borderTopRightRadius: 140, transform: [{ rotate: '-2deg' }] },
+  heroHillFront: { position: 'absolute', left: 60, right: -16, bottom: -34, height: 74, borderTopLeftRadius: 120, borderTopRightRadius: 120, transform: [{ rotate: '3deg' }] },
+  heroTextBlock: { padding: 16 },
+  heroName: { fontSize: 22, fontWeight: '900', color: '#1A1A1A' },
+  heroDates: { fontSize: 13, fontWeight: '700', color: '#5C5148', marginTop: 4, opacity: 0.8 },
+  heroPill: { alignSelf: 'flex-start', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7, marginTop: 10 },
+  heroPillText: { fontSize: 12, fontWeight: '900' },
+
+  // Overview card
+  overviewCard: {
+    marginHorizontal: 16, marginTop: -46, marginBottom: 20,
+    backgroundColor: '#fff', borderRadius: 24, padding: 18,
+    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 6,
+  },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
+  statBlock: { alignItems: 'center', flex: 1 },
+  statValue: { fontSize: 16, fontWeight: '900', color: '#1A1A1A', marginTop: 4 },
+  statLabel: { fontSize: 10, color: '#8A817A', fontWeight: '700', marginTop: 2 },
+  routesPill: { backgroundColor: '#E8F5E9', borderRadius: 14, paddingVertical: 9, alignItems: 'center' },
+  routesPillText: { fontSize: 12, fontWeight: '800', color: '#2E7D32' },
+  overviewEmptyTitle: { fontSize: 15, fontWeight: '800', color: '#1A1A1A' },
+  overviewEmptySubtitle: { fontSize: 12, color: '#8A817A', fontWeight: '600', marginTop: 2, marginBottom: 14 },
+  overviewAddBtn: { backgroundColor: '#4CAF50', borderRadius: 14, paddingHorizontal: 22, paddingVertical: 12 },
+  overviewAddBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+
+  // Timeline
+  section: { marginHorizontal: 16, marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: '900', color: '#1A1A1A', marginBottom: 12 },
+  dateHeader: { fontSize: 12, fontWeight: '900', color: '#E9A86A', letterSpacing: 0.6, marginBottom: 8, marginLeft: 26 },
+  timelineRow: { flexDirection: 'row', alignItems: 'stretch' },
+  timelineRail: { width: 26, alignItems: 'center' },
+  timelineDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: '#4CAF50', marginTop: 6 },
+  timelineLine: { width: 2, flex: 1, backgroundColor: '#E5DFD7', marginTop: 4, marginBottom: 4, minHeight: 30 },
+  viewAllBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 14 },
+  viewAllText: { fontSize: 14, fontWeight: '700', color: '#4CAF50' },
+  viewAllChevron: { fontSize: 16, color: '#4CAF50' },
+
+  fab: {
+    position: 'absolute', bottom: 24, right: 20, width: 56, height: 56, borderRadius: 28,
+    backgroundColor: '#4CAF50', alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#4CAF50', shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+  },
+  fabText: { fontSize: 28, color: '#fff', fontWeight: '400', lineHeight: 30 },
 });

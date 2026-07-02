@@ -10,6 +10,7 @@ import MapScreen from '../screens/MapScreen';
 import JournalScreen from '../screens/JournalScreen';
 import AccommodationScreen from '../screens/AccommodationScreen';
 import TransportScreen from '../screens/TransportScreen';
+import TransportDetailsScreen from '../screens/TransportDetailsScreen';
 import PackingScreen from '../screens/PackingScreen';
 import DocumentsScreen from '../screens/DocumentsScreen';
 import TripOverviewScreen from '../screens/TripOverviewScreen';
@@ -31,6 +32,7 @@ import MyTripsScreen from '../screens/MyTripsScreen';
 import JoinTripScreen from '../screens/JoinTripScreen';
 import { useCurrentTrip } from '../context/TripContext';
 import { getDestinationHero } from '../lib/destinationHero';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -125,6 +127,7 @@ function HomeStack() {
       <Stack.Screen name="TripOverview" component={TripOverviewScreen} />
       <Stack.Screen name="Accommodation" component={AccommodationScreen} />
       <Stack.Screen name="Transport" component={TransportScreen} />
+      <Stack.Screen name="TransportDetails" component={TransportDetailsScreen} />
       <Stack.Screen name="Packing" component={PackingScreen} />
       <Stack.Screen name="Documents" component={DocumentsScreen} />
       <Stack.Screen name="DestinationDetails" component={DestinationDetailsScreen} />
@@ -151,6 +154,7 @@ function ItineraryStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ItineraryMain" component={ItineraryScreen} />
       <Stack.Screen name="Transport" component={TransportScreen} />
+      <Stack.Screen name="TransportDetails" component={TransportDetailsScreen} />
       <Stack.Screen name="Accommodation" component={AccommodationScreen} />
       <Stack.Screen name="DestinationDetails" component={DestinationDetailsScreen} />
     </Stack.Navigator>
@@ -173,6 +177,7 @@ function ExploreStack() {
       <Stack.Screen name="ExploreMain" component={MapScreen} />
       <Stack.Screen name="Accommodation" component={AccommodationScreen} />
       <Stack.Screen name="Transport" component={TransportScreen} />
+      <Stack.Screen name="TransportDetails" component={TransportDetailsScreen} />
       <Stack.Screen name="Packing" component={PackingScreen} />
       <Stack.Screen name="Documents" component={DocumentsScreen} />
       <Stack.Screen name="TripOverview" component={TripOverviewScreen} />

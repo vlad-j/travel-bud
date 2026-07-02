@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, Image, StyleSheet } from 'react-native';
 
 function getTripMood(destinations: any[]): string {
   const names = destinations
@@ -75,6 +75,14 @@ export default function TripHero({ trip, destinations, theme }: Props) {
           {destinationName}
         </Text>
       </View>
+
+      {theme.image && (
+        <Image
+          source={theme.image}
+          resizeMode="contain"
+          style={styles.illustration}
+        />
+      )}
 
       <View style={styles.heroTitleBlock}>
         <Text style={styles.heroTitle} numberOfLines={2}>
@@ -154,6 +162,14 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 130,
     borderTopRightRadius: 130,
     transform: [{ rotate: '3deg' }],
+  },
+
+  illustration: {
+    position: 'absolute',
+    right: -14,
+    bottom: -16,
+    width: 340,
+    height: 165,
   },
 
   heroPill: {
